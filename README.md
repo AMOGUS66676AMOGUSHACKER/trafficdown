@@ -3,7 +3,7 @@
 Установка НА ТЕРМУХ :
 
 
-cd ~ && rm -rf TrafficDown && apt update && apt upgrade -y && apt install python3 -y && apt install git -y && git clone https://github.com/AMOGUS66676AMOGUSHACKER/trafficdown && cd trafficDown && python3 TrafficDown.py
+cd ~ && rm -rf TrafficDown && apt update && apt upgrade -y && apt install python3 -y && apt install git -y && git clone https://github.com/AMOGUS66676AMOGUSHACKER/trafficdown && cd trafficdown && python3 TrafficDown.py
 
 
 
