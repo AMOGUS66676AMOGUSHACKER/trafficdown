@@ -8,7 +8,7 @@ cd ~ && rm -rf trafficdown && apt update && apt upgrade -y && apt install python
 
 
 
-На винде вам нужен python 3.13+ тогда ви открываете файл и всё.
+На винде вам нужен python 3.13+ тогда вы скачиваете и открываете файл и всё.
 
 
 
