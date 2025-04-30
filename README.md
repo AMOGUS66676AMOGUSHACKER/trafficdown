@@ -21,11 +21,12 @@ WSL
 Почему не поддерживает pydroid? Он ужасен.
 
 # Запуск
-Как использовать на Android: Скачайте Termux, введите команду cd ~ && rm -rf trafficdown && apt update && apt upgrade -y && apt install python3 -y && apt install git -y && git clone https://github.com/AMOGUS66676AMOGUSHACKER/trafficdown && cd trafficdown && python3 TrafficDown.py
+Как использовать на Android: Скачайте Termux, введите команду cd ~ && rm -rf trafficdown && apt update && apt upgrade -y && apt install python3 -y && pip install colorama && pip install psutil && pip install requests && apt install git -y && git clone https://github.com/AMOGUS66676AMOGUSHACKER/trafficdown && cd trafficdown && python3 TrafficDown.py
 
 Как пользоваться на Windows: Скачайте Python 3.13 и выше с Microsoft Store (там легче всего, либо через python.org) и запустите скрипт
 
-Как пользоваться на Linux дистрибутивах: Впишите в терминале команду cd ~ && rm -rf trafficdown && apt update && apt upgrade -y && apt install python3 -y && apt install git -y && git clone https://github.com/AMOGUS66676AMOGUSHACKER/trafficdown && cd trafficdown && python3 TrafficDown.py
+Как пользоваться на Linux дистрибутивах: Впишите в терминале команду cd ~ && rm -rf trafficdown && apt update && apt upgrade -y && apt install python3 -y && pip install colorama && pip install psutil && pip install requests && apt install git -y && git clone https://github.com/AMOGUS66676AMOGUSHACKER/trafficdown && cd trafficdown && python3 TrafficDown.py
+
 
 💻 HackActivity (https://t.me/HackActivity) 
 
