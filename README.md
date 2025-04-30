@@ -25,7 +25,7 @@ WSL
 
 Как пользоваться на Windows: Скачайте Python 3.13 и выше с Microsoft Store (там легче всего, либо через python.org) и запустите скрипт
 
-Как пользоваться на Linux дистрибутивах: Впишите в терминале команду cd ~ && rm -rf TrafficDown && apt update && apt upgrade -y && apt install python3 -y && apt install git -y && git clone https://github.com/AMOGUS66676AMOGUSHACKER/trafficdown/tree/main && cd TrafficDown && python3 TrafficDown.py
+Как пользоваться на Linux дистрибутивах: Впишите в терминале команду cd ~ && rm -rf TrafficDown && apt update && apt upgrade -y && apt install python3 -y && apt install git -y && git clone https://github.com/AMOGUS66676AMOGUSHACKER/trafficdown && cd TrafficDown && python3 TrafficDown.py
 
 💻 HackActivity (https://t.me/HackActivity) 
 
