@@ -202,7 +202,17 @@ if useTkinter:
 
     window.mainloop()
 else:
-    while True:
+    
+    def consoleUpdater():
+        while True:
+            time.sleep(1)
+            if eat:
+                with readed_lock:
+                    traffic_mb = readed[0] / 1024 / 1024
+                print(f"\r{colorama.Fore.YELLOW}Использовано трафика: {traffic_mb:.2f} MB{colorama.Fore.RESET}", end='')
+
+    threading.Thread(target=consoleUpdater, daemon=True).start()
+while True:
         os.system('clear' if os.name != 'nt' else 'cls')
         size = os.get_terminal_size()
         x, y = size.columns, size.lines
