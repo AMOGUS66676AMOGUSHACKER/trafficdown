@@ -27,6 +27,12 @@ WSL
 
 Как пользоваться на Linux дистрибутивах: Впишите в терминале команду cd ~ && rm -rf trafficdown && apt update && apt upgrade -y && apt install python3 -y && pip install colorama && pip install psutil && pip install requests && apt install git -y && git clone https://github.com/AMOGUS66676AMOGUSHACKER/trafficdown && cd trafficdown && python3 TrafficDown.py
 
+# Changelog
+v2.0
+Оптимизирован скрипт.
+Улушенный дизайн.
+Полная переработка кода и безопасности.
+Изменена логика автозагрузки и зависимостей.
 
 💻 HackActivity (https://t.me/HackActivity) 
 
