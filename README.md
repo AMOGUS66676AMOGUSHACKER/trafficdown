@@ -36,6 +36,11 @@ v2.0 beta
 Полная переработка кода и безопасности.
 
 Изменена логика автозагрузки и зависимостей.
+# Тест
+pkg update -y
+pkg install python rust binutils build-essential -y
+pip install --upgrade pip
+pip install aiohttp rich psutil requests
 
 ❗ИНФОРМАЦИЯ! Изза нового бага на андроид устройствах и линуксе версия 2.0b будет работать временно ТОЛЬКО на ПК!
 Фото новой версии
