@@ -34,18 +34,20 @@ v2.0 beta
 Улушенный дизайн.
 
 Полная переработка кода и безопасности.
-
+V2.1 Добавлены нормальные настройки и логирование всего процесса
+Оптимизация скрипта
+Улучшен Дизайн
 Изменена логика автозагрузки и зависимостей.
 # Тест
-pkg update -y
-pkg install python rust binutils build-essential -y
+pkg update -y && pkg upgrade -y
+pkg install python rust binutils build-essential git -y
 pip install --upgrade pip
-pip install aiohttp rich psutil requests
-
+pip install aiohttp rich psutil requests netifaces
+# Доска обявлений
 ❗ИНФОРМАЦИЯ! Изза нового бага на андроид устройствах и линуксе версия 2.0b будет работать временно ТОЛЬКО на ПК!
 Фото новой версии
 
-<img width="700" height="552" alt="image" src="https://github.com/user-attachments/assets/6ffc28ac-8166-418d-b0d5-a8da2b31138f" />
+<img width="869" height="653" alt="image" src="https://github.com/user-attachments/assets/72f4d864-3e7a-4fe0-848b-f3177bbe7662" />
 
 💻 HackActivity (https://t.me/HackActivity) 
 
