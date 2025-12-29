@@ -1,11 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
-"""
-TRAFFIC DOWN v7.0 [GOD MODE]
-Авторська переробка з збереженням оригінального функціоналу.
-"""
-
 import os
 import sys
 import time
