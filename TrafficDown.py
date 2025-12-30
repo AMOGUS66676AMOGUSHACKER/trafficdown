@@ -49,7 +49,7 @@ if not log.handlers:
     log.addHandler(console_handler)
 
 def auto_install():
-    required = ["aiohttp", "rich", "psutil", "requests", "netifaces"]
+    required = ["aiohttp", "rich", "psutil", "requests"]
     if IS_WINDOWS: required.append("customtkinter")
     
     missing = []
@@ -75,8 +75,7 @@ auto_install()
 
 # --- ІМПОРТИ ---
 import aiohttp
-import psutil
-import netifaces
+import psutil   
 from rich.console import Console
 from rich.layout import Layout
 from rich.panel import Panel
@@ -119,12 +118,18 @@ class Config:
             json.dump(self.data, f, indent=4)
             
     def get_gateway(self):
-        """Автоматичний пошук IP роутера (Gateway)"""
-        try:
-            gws = netifaces.gateways()
-            return gws['default'][netifaces.AF_INET][0]
-        except:
-            return "192.168.0.1"
+            """Безпечний пошук шлюзу (працює на Termux без помилок)"""
+            try:
+                # Створюємо фіктивне підключення до Google DNS, щоб дізнатися маршрут
+                s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                s.connect(("8.8.8.8", 80))
+                local_ip = s.getsockname()[0]
+                s.close()
+                # Беремо локальну IP і замінюємо останню цифру на 1 (стандарт для роутерів)
+                base = ".".join(local_ip.split(".")[:3])
+                return f"{base}.1"
+            except:
+                return "192.168.0.1"
 
 cfg = Config()
 
@@ -229,7 +234,7 @@ class GodEngine:
                 sock.sendto(payload, (ip, port))
                 with self.lock: self.ul_total += packet_size
                 # Анти-фриз для слабких пристроїв
-                if IS_ANDROID and self.ul_total % (packet_size * 50) == 0:
+                if IS_ANDROID and self.ul_total % (packet_size * 100) == 0:
                     await asyncio.sleep(0.01)
             except:
                 with self.lock: self.errors += 1
