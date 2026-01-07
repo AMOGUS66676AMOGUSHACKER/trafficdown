@@ -157,6 +157,20 @@ class Config:
         log.info("Конфігурацію скинуто до значень за замовчуванням.")
 
 cfg = Config()
+def get_gateway_ip() -> str:
+    """Намагається визначити IP-адресу шлюзу за замовчуванням."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+        return ".".join(local_ip.split('.')[:3]) + ".1"
+    except socket.error as e:
+        log.warning(
+            f"Не вдалося визначити IP шлюзу: {e}. "
+            "Використовується IP за замовчуванням."
+        )
+        return "192.168.0.1"
+
 
 # --- 2. МЕРЕЖЕВИЙ РУШІЙ ---
 class EngineMode(Enum):
