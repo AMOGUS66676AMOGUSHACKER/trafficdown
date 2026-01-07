@@ -33,7 +33,7 @@ from enum import Enum
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from typing import Dict, Any, Tuple, Optional, List
-
+from rich.console import Console, Sparkline
 # --- Системні константи ---
 IS_WINDOWS = os.name == 'nt'
 IS_ANDROID = "com.termux" in os.environ.get("PREFIX", "")
