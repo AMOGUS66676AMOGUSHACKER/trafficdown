@@ -70,9 +70,5 @@ pkg install python rust binutils build-essential git -y
 pip install --upgrade pip
 pip install aiohttp rich psutil requests netifaces
 # Доска обявлений
-❗ИНФОРМАЦИЯ! Изза нового бага на андроид устройствах и линуксе версия 2.0b будет работать временно ТОЛЬКО на ПК!
 
-
-💻 HackActivity (https://t.me/HackActivity) 
-
-![image](https://github.com/user-attachments/assets/802bab89-14f5-4534-b62d-2632261927e4)
+Сдесь пока еще нихуя нету
