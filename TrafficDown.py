@@ -33,7 +33,31 @@ from enum import Enum
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from typing import Dict, Any, Tuple, Optional, List
-from rich.console import Console, Sparkline
+from rich.console import Console
+try:
+    from rich.console import Sparkline
+except ImportError:
+    # 👉 fallback для старих версій rich
+    from rich.text import Text
+
+    class Sparkline:
+        def __init__(self, data, color="green"):
+            self.data = list(data)
+            self.color = color
+
+        def __rich__(self):
+            if not self.data:
+                return Text("", style=self.color)
+
+            blocks = "▁▂▃▄▅▆▇█"
+            lo, hi = min(self.data), max(self.data) or 1e-9
+            rng = max(hi - lo, 1e-9)
+
+            chars = [
+                blocks[int((v - lo) / rng * (len(blocks) - 1))]
+                for v in self.data
+            ]
+            return Text("".join(chars), style=self.color)
 # --- Системні константи ---
 IS_WINDOWS = os.name == 'nt'
 IS_ANDROID = "com.termux" in os.environ.get("PREFIX", "")
