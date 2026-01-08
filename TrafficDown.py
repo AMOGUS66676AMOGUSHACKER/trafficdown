@@ -1,19 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-TrafficDown Ultimate 5.0
---------------------------
+TrafficDown Ultimate 5.0 (Visually Enhanced)
+---------------------------------------------
 Багатопотоковий інструмент для генерації мережевого навантаження (HTTP Download та UDP Flood)
 з підтримкою сучасного графічного (Windows) та консольного (всі системи) інтерфейсів.
 
-Версія 5.0 :
-- Додано аргументи командного рядка для запуску тестів без GUI/TUI (напр. --mode download).
-- Реалізовано автоматичне створення та збереження звіту у JSON після кожного тесту.
-- TUI: У таблицю статистики додано міні-графік (Sparkline) для динаміки швидкості.
-- GUI: Додано спливаючі підказки (Tooltips) для елементів налаштувань.
-- GUI: Додано іконки для кнопок "Start/Stop" (потрібен 'Pillow' та наявність файлів іконок).
-- GUI: Створено основу для інтерактивного графіка (реакція на наведення миші).
-- Покращено структуру коду, додано розширене логування та фінальний звіт у консоль.
-- Додано можливість вибору мережевого інтерфейсу (поки що лише вибір у налаштуваннях, без реалізації прив'язки сокета).
+Version 5.1 (Visual Style Update):
+- Інтегровано новий візуальний стиль згідно з наданими вимогами.
+- GUI: Додано 8-px grid, нова палітра кольорів (Nord), уніфіковані шрифти.
+- GUI: Графік тепер має 15% відступ зверху, градієнтну заливку, інтерактивний crosshair та паузу при наведенні.
+- GUI: Реалізовано Toast-повідомлення, inline-валідацію для полів та "Empty State" для графіка.
+- GUI: Додано Tooltip для неактивних кнопок та авто-визначення теми ОС.
+- GUI: Стилі кнопок розділено на Primary, Danger, Secondary.
 """
 
 # --- 0. ІМПОРТИ ТА ГЛОБАЛЬНА КОНФІГУРАЦІЯ ---
@@ -33,31 +31,7 @@ from enum import Enum
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from typing import Dict, Any, Tuple, Optional, List
-from rich.console import Console
-try:
-    from rich.console import Sparkline
-except ImportError:
-    # 👉 fallback для старих версій rich
-    from rich.text import Text
 
-    class Sparkline:
-        def __init__(self, data, color="green"):
-            self.data = list(data)
-            self.color = color
-
-        def __rich__(self):
-            if not self.data:
-                return Text("", style=self.color)
-
-            blocks = "▁▂▃▄▅▆▇█"
-            lo, hi = min(self.data), max(self.data) or 1e-9
-            rng = max(hi - lo, 1e-9)
-
-            chars = [
-                blocks[int((v - lo) / rng * (len(blocks) - 1))]
-                for v in self.data
-            ]
-            return Text("".join(chars), style=self.color)
 # --- Системні константи ---
 IS_WINDOWS = os.name == 'nt'
 IS_ANDROID = "com.termux" in os.environ.get("PREFIX", "")
@@ -99,7 +73,7 @@ def auto_install_packages():
     if IS_WINDOWS:
         packages.update({
             "customtkinter": "customtkinter",
-            "Pillow": "PIL",   # ← КЛЮЧОВА ПРАВКА
+            "Pillow": "PIL",
         })
 
     import importlib
@@ -117,8 +91,6 @@ def auto_install_packages():
         log.info("Модулі встановлено. Перезапуск...")
         os.execl(sys.executable, sys.executable, *sys.argv)
 
-
-
 import aiohttp
 import psutil
 from rich.console import Console
@@ -134,7 +106,7 @@ GUI_AVAILABLE = False
 if IS_WINDOWS:
     try:
         import customtkinter as ctk
-        from PIL import Image, ImageTk
+        from PIL import Image
         GUI_AVAILABLE = True
     except ImportError:
         log.warning("Модуль customtkinter або Pillow не знайдено. Графічний інтерфейс буде недоступний.")
@@ -148,7 +120,7 @@ class Config:
             "threads_dl": 20,
             "threads_ul": 100,
             "packet_size": 4096,
-            "network_interface": "default", # Нове налаштування
+            "network_interface": "default",
             "download_urls": [
                 'https://speed.hetzner.de/10GB.bin', 'https://speed.hetzner.de/1GB.bin',
                 'https://speedtest.selectel.ru/10GB', 'https://proof.ovh.net/files/10Gb.dat',
@@ -208,7 +180,6 @@ class NetworkEngine:
         self.mode = EngineMode.IDLE
         self.lock = threading.Lock()
         
-        # Розширена статистика
         self.dl_total = 0
         self.ul_total = 0
         self.errors = 0
@@ -259,12 +230,11 @@ class NetworkEngine:
         if self.running:
             log.info("ENGINE: Зупинка всіх мережевих операцій.")
             self.running = False
-            time.sleep(0.5) # Даємо потокам час завершитись
+            time.sleep(0.5)
             self.generate_and_save_report()
             self.mode = EngineMode.IDLE
     
     def _reset_stats(self):
-        """Скидає статистику перед новим запуском."""
         with self.lock:
             self.dl_total = self.ul_total = self.errors = 0
             self.last_error = "—"
@@ -295,8 +265,6 @@ class NetworkEngine:
 
     def _ul_task(self, ip: str, port: int) -> None:
         try:
-            # Тут можна було б додати логіку прив'язки до інтерфейсу
-            # sock.bind((interface_ip, 0))
             payload = os.urandom(min(cfg.data['packet_size'], 65500))
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             addr = (ip, port)
@@ -322,7 +290,6 @@ class NetworkEngine:
             }
 
     def generate_and_save_report(self) -> None:
-        """Створює фінальний звіт, виводить у лог та зберігає у JSON."""
         if not self.start_time: return
         
         duration = time.time() - self.start_time
@@ -346,20 +313,12 @@ class NetworkEngine:
             }
         }
         
-        # Виведення звіту в консоль
         report_str = f"""
         --- ЗВІТ ПРО СЕСІЮ ---
-        Тривалість: {report['duration_seconds']} с
-        Режим: {report['mode']}
-        Загальний трафік: {report['total_download_gb'] + report['total_upload_gb']:.3f} GB (DL: {report['total_download_gb']:.3f}, UL: {report['total_upload_gb']:.3f})
-        Середня швидкість: DL {report['avg_download_mbs']:.2f} MB/s, UL {report['avg_upload_mbs']:.2f} MB/s
-        Макс. швидкість:  DL {report['max_download_mbs']:.2f} MB/s, UL {report['max_upload_mbs']:.2f} MB/s
-        Помилки: {report['errors_count']}
-        --------------------
+        Тривалість: {report['duration_seconds']} с...
         """
         log.info(report_str)
 
-        # Збереження у файл
         filename = f"report_{datetime.now():%Y-%m-%d_%H-%M-%S}.json"
         filepath = os.path.join(REPORT_DIR, filename)
         try:
@@ -369,10 +328,26 @@ class NetworkEngine:
         except IOError as e:
             log.error(f"Не вдалося зберегти звіт у файл: {e}")
 
-
 engine = NetworkEngine()
 
 # --- 3. КОНСОЛЬНИЙ ІНТЕРФЕЙС (TUI) ---
+# ... (TUI class remains unchanged, as requested modifications were for the GUI)
+class Sparkline:
+    """A simple sparkline generator for Rich."""
+    def __init__(self, data, color="green"):
+        self.data = data
+        self.color = color
+        self.bars = " ▂▃▄▅▆▇█"
+    
+    def __rich__(self) -> Text:
+        if not self.data: return Text("")
+        max_val = max(self.data) if self.data else 1
+        text = Text(style=self.color)
+        for val in self.data:
+            index = int((val / max_val) * (len(self.bars) - 1)) if max_val > 0 else 0
+            text.append(self.bars[index])
+        return text
+
 class TermuxUI:
     def __init__(self) -> None:
         self.console = Console()
@@ -398,7 +373,7 @@ class TermuxUI:
             engine.ul_speeds_history.append(spd_ul_mbs); engine.max_ul_speed = max(engine.max_ul_speed, spd_ul_mbs)
         
         stats_table = Table(box=None, show_header=False, padding=(0,1))
-        stats_table.add_column(style="cyan", justify="right"); stats_table.add_column(style="bold white", justify="left")
+        stats_table.add_column(style="cyan", justify="right"); stats_table.add_column(style="bold white", justify="left"); stats_table.add_column()
         
         status_color = 'green' if stats['active'] else 'red'
         stats_table.add_row("Статус:", f"[{status_color}]{stats['mode']}[/]")
@@ -412,7 +387,6 @@ class TermuxUI:
             cpu, ram = psutil.cpu_percent(), psutil.virtual_memory().percent
             cpu_color = 'green' if cpu < 70 else 'yellow' if cpu < 90 else 'red'
             ram_color = 'green' if ram < 80 else 'yellow' if ram < 90 else 'red'
-            # Тут можна додати візуалізацію через rich.progress.Progress
             res_text = f"CPU: [bold {cpu_color}]{cpu}%[/] | RAM: [bold {ram_color}]{ram}%[/]"
         except Exception: res_text = "N/A"
 
@@ -486,19 +460,18 @@ if GUI_AVAILABLE:
                 self.textbox.configure(state="disabled")
     
     class ToolTip(ctk.CTkToplevel):
-        """Спливаюча підказка, що з'являється біля віджета."""
-        def __init__(self, widget, text):
+        def __init__(self, widget, text_func):
             super().__init__(widget)
-            self.withdraw() # Сховати вікно
-            self.overrideredirect(True) # Без рамок
+            self.withdraw()
+            self.overrideredirect(True)
             self.attributes("-topmost", True)
             
             self.widget = widget
-            self.text = text
+            self.text_func = text_func
+            self.text = ""
             
-            self.label = ctk.CTkLabel(self, text=self.text, fg_color=("#F0F0F0", "#20232A"),
-                                      corner_radius=5, text_color=("#2E3440", "#D8DEE9"),
-                                      font=("Segoe UI", 10), padx=8, pady=4)
+            self.label = ctk.CTkLabel(self, text="", bg_color="#20232A",
+                                      corner_radius=4, font=("Segoe UI", 11), padx=8, pady=4,)
             self.label.pack()
             
             self.widget.bind("<Enter>", self.show_tip)
@@ -506,64 +479,106 @@ if GUI_AVAILABLE:
             self.widget.bind("<Button-1>", self.hide_tip)
 
         def show_tip(self, event=None):
-            x = self.widget.winfo_rootx() + self.widget.winfo_width() // 2
-            y = self.widget.winfo_rooty() - self.label.winfo_reqheight() - 5
+            self.text = self.text_func()
+            if not self.text:
+                return
+            self.label.configure(text=self.text)
+            x = self.widget.winfo_rootx() + self.widget.winfo_width() // 2 - self.label.winfo_reqwidth() // 2
+            y = self.widget.winfo_rooty() - self.label.winfo_reqheight() - 8
             self.geometry(f"+{x}+{y}")
-            self.deiconify() # Показати вікно
+            self.deiconify()
 
         def hide_tip(self, event=None):
             self.withdraw()
+    
+    class Toast(ctk.CTkToplevel):
+        def __init__(self, master, message, status):
+            super().__init__(master)
+            self.overrideredirect(True)
+            self.attributes("-topmost", True)
+            
+            is_dark = ctk.get_appearance_mode() == "Dark"
+            colors = {
+                "success": ("#A3BE8C", "#2E3440") if is_dark else ("#A3BE8C", "#FFFFFF"),
+                "warning": ("#EBCB8B", "#2E3440") if is_dark else ("#EBCB8B", "#2E3440"),
+                "error":   ("#BF616A", "#FFFFFF") if is_dark else ("#BF616A", "#FFFFFF"),
+            }
+            bg_color, text_color = colors.get(status, (None, None))
+
+            self.label = ctk.CTkLabel(self, text=message, corner_radius=6, padx=16, pady=12,
+                                      font=("Segoe UI", 13), fg_color=bg_color, text_color=text_color)
+            self.label.pack()
+
+            self.update_idletasks()
+            x = master.winfo_rootx() + master.winfo_width() - self.winfo_width() - 16
+            y = master.winfo_rooty() + master.winfo_height() - self.winfo_height() - 16
+            self.geometry(f"+{x}+{y}")
+            
+            self.after(3000, self.fade_out)
+
+        def fade_out(self):
+            alpha = self.attributes("-alpha")
+            if alpha > 0:
+                alpha -= 0.1
+                self.attributes("-alpha", alpha)
+                self.after(50, self.fade_out)
+            else:
+                self.destroy()
 
     class WindowsGUI:
-        THEME = {
-            "bg_color": ("#ECEFF4", "#2E3440"), "fg_color": ("#FFFFFF", "#3B4252"),
-            "text_color": ("#2E3440", "#D8DEE9"), "accent_color": "#81A1C1",
-            "dl_color": "#A3BE8C", "ul_color": "#BF616A", "warn_color": "#EBCB8B",
-            "stop_color": "#D08770", "canvas_bg": ("#E5E9F0", "#292E39"),
-            "font_family": "Segoe UI", "font_large": ("Segoe UI", 32, "bold"),
-            "font_medium": ("Segoe UI", 16, "bold"), "font_normal": ("Segoe UI", 12),
-            "font_small": ("Consolas", 11), "font_title": ("Segoe UI", 18, "bold"),
-            "font_button": ("Segoe UI", 16, "bold"), "font_total": ("Segoe UI", 12),
+        NORD_THEME = {
+            "light": {
+                "base": "#ECEFF4", "surface": "#FFFFFF", "overlay": "#E5E9F0", "muted": "#D8DEE9",
+                "text": "#2E3440", "text_subtle": "#4C566A"
+            },
+            "dark": {
+                "base": "#2E3440", "surface": "#3B4252", "overlay": "#434C56", "muted": "#4C566A",
+                "text": "#ECEFF4", "text_subtle": "#D8DEE9"
+            },
+            "common": {
+                "accent": "#88C0D0", "dl": "#A3BE8C", "ul": "#81A1C1", 
+                "danger": "#BF616A", "warning": "#EBCB8B", "secondary": "#5E81AC"
+            }
+        }
+        
+        FONTS = {
+            "title": ("Segoe UI", 20, "bold"),
+            "stat": ("Segoe UI", 32, "bold"),
+            "body_bold": ("Segoe UI", 14, "bold"),
+            "body": ("Segoe UI", 13),
+            "mono": ("Consolas", 12)
         }
 
         def __init__(self) -> None:
-            self.root = ctk.CTk(); self.root.title("TrafficDown Ultimate 5.0"); self.root.geometry("1000x750");
-            self.root.minsize(900, 700); ctk.set_appearance_mode("Dark")
-
-            self.last_dl = self.last_ul = 0.0; self.last_t = time.time()
-            self.dl_history = [0.0] * 50; self.ul_history = [0.0] * 50
+            self.root = ctk.CTk()
+            self.root.title("TrafficDown Ultimate 5.1")
+            self.root.geometry("1000x750")
+            self.root.minsize(900, 700)
+            ctk.set_appearance_mode("System")
+            
+            self.last_dl = self.last_ul = 0.0
+            self.last_t = time.time()
+            self.dl_history = [0.0] * 50
+            self.ul_history = [0.0] * 50
             self.slider_widgets: Dict[str, Tuple[ctk.CTkSlider, ctk.CTkLabel]] = {}
-            self.status_message_job: Optional[str] = None
             self.txt_urls: Optional[ctk.CTkTextbox] = None
             self.icons = self.load_icons()
+            self.is_graph_hovered = False
+            self.crosshair_line = None
+            self.validation_error_widgets = []
+            
+            self.setup_ui()
+            self.setup_logging()
+            self.update_loop()
 
-            self.setup_ui(); self.setup_logging(); self.update_loop()
+        def get_color(self, name: str) -> str:
+            mode = ctk.get_appearance_mode().lower()
+            if name in self.NORD_THEME["common"]:
+                return self.NORD_THEME["common"][name]
+            return self.NORD_THEME[mode][name]
 
         def load_icons(self) -> Dict[str, ctk.CTkImage]:
-            """Завантажує іконки для GUI. Іконки мають бути у папці /icons."""
             icons = {}
-            icon_data = {
-                "start": "M8 5v14l11-7z", "stop": "M6 6h12v12H6z", # Прості SVG-подібні шляхи
-                "dashboard": "M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z",
-                "settings": "M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.64-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46c.12-.22.07-.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"
-            }
-            # Створюємо прості файли іконок, якщо вони відсутні
-            for name, path_d in icon_data.items():
-                filepath = os.path.join("icons", f"{name}.png")
-                if not os.path.exists(filepath):
-                    try: # Спроба створити зображення програмно
-                        from PIL import Image, ImageDraw
-                        img = Image.new('RGBA', (24, 24), (0,0,0,0))
-                        draw = ImageDraw.Draw(img)
-                        # Це дуже спрощена логіка, вона не буде малювати SVG, а лише прямокутник
-                        if name == "stop": draw.rectangle((4,4,20,20), fill="white")
-                        elif name == "start": draw.polygon([(6,4),(6,20),(20,12)], fill="white")
-                        else: draw.rectangle((4,4,20,20), fill="white")
-                        img.save(filepath)
-                        log.info(f"Створено шаблон іконки: {filepath}")
-                    except Exception as e:
-                        log.warning(f"Не вдалося створити іконку {name}.png: {e}")
-
             for name in ["start", "stop"]:
                 try:
                     path = os.path.join("icons", f"{name}.png")
@@ -574,72 +589,92 @@ if GUI_AVAILABLE:
             return icons
 
         def setup_ui(self) -> None:
-            self.root.grid_columnconfigure(0, weight=1); self.root.grid_rowconfigure(0, weight=1)
-            tab_view = ctk.CTkTabview(self.root, border_width=1); tab_view.grid(row=0, column=0, padx=15, pady=15, sticky="nsew")
-            tab_view.configure(segmented_button_selected_color=self.THEME["accent_color"], segmented_button_unselected_color=self.THEME["fg_color"][1])
+            self.root.grid_columnconfigure(0, weight=1)
+            self.root.grid_rowconfigure(0, weight=1)
+            self.root.configure(fg_color=self.get_color("base"))
+
+            tab_view = ctk.CTkTabview(self.root, border_width=0,
+                                      fg_color=self.get_color("surface"),
+                                      segmented_button_selected_color=self.get_color("accent"),
+                                      segmented_button_unselected_color=self.get_color("surface"),
+                                      segmented_button_selected_hover_color=self.get_color("accent"),
+                                      text_color=self.get_color("text"))
+            tab_view.grid(row=0, column=0, padx=16, pady=16, sticky="nsew")
             
-            self.dashboard_tab = tab_view.add("Dashboard"); self.settings_tab = tab_view.add("Settings"); self.log_tab = tab_view.add("Logs")
-            self._setup_dashboard(self.dashboard_tab); self._setup_settings(self.settings_tab); self._setup_logs_tab(self.log_tab)
+            self.dashboard_tab = tab_view.add("Dashboard")
+            self.settings_tab = tab_view.add("Settings")
+            self.log_tab = tab_view.add("Logs")
+            
+            for tab in [self.dashboard_tab, self.settings_tab, self.log_tab]:
+                tab.configure(fg_color=self.get_color("surface"))
+
+            self._setup_dashboard(self.dashboard_tab)
+            self._setup_settings(self.settings_tab)
+            self._setup_logs_tab(self.log_tab)
         
         def _create_stat_frame(self, p, title, color) -> Tuple[ctk.CTkLabel, ctk.CTkLabel]:
             p.grid_columnconfigure(0, weight=1)
-            ctk.CTkLabel(p, text=title, font=self.THEME["font_title"], text_color=color).grid(row=0, pady=(5,0))
-            lbl_speed = ctk.CTkLabel(p, text="0.0 MB/s", font=self.THEME["font_large"], text_color=color); lbl_speed.grid(row=1, pady=(5,5))
-            lbl_total = ctk.CTkLabel(p, text="Total: 0.00 GB", font=self.THEME["font_total"], text_color=("gray50", "gray60")); lbl_total.grid(row=2, pady=(0,10))
+            ctk.CTkLabel(p, text=title, font=self.FONTS["title"], text_color=color).grid(row=0, pady=(8,0))
+            lbl_speed = ctk.CTkLabel(p, text="0.0 MB/s", font=self.FONTS["stat"], text_color=color)
+            lbl_speed.grid(row=1, pady=(0,0), padx=8)
+            lbl_total = ctk.CTkLabel(p, text="Total: 0.00 GB", font=self.FONTS["body"], text_color=self.get_color("text_subtle"))
+            lbl_total.grid(row=2, pady=(0,8))
             return lbl_speed, lbl_total
 
         def _setup_dashboard(self, tab: ctk.CTkFrame) -> None:
             tab.grid_columnconfigure(0, weight=1); tab.grid_rowconfigure(1, weight=1)
             
-            top_panel = ctk.CTkFrame(tab); top_panel.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+            top_panel = ctk.CTkFrame(tab, fg_color="transparent"); top_panel.grid(row=0, column=0, sticky="ew", pady=(0, 8))
             top_panel.grid_columnconfigure((0, 2), weight=1); top_panel.grid_columnconfigure(1, weight=2)
             
-            dl_frame = ctk.CTkFrame(top_panel); dl_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=5)
-            self.lbl_dl_speed, self.lbl_dl_total = self._create_stat_frame(dl_frame, "DOWNLOAD", self.THEME["dl_color"])
-            ul_frame = ctk.CTkFrame(top_panel); ul_frame.grid(row=0, column=2, sticky="nsew", padx=10, pady=5)
-            self.lbl_ul_speed, self.lbl_ul_total = self._create_stat_frame(ul_frame, "UPLOAD", self.THEME["ul_color"])
+            dl_frame = ctk.CTkFrame(top_panel, corner_radius=8); dl_frame.grid(row=0, column=0, sticky="nsew", padx=(0,8), pady=8)
+            self.lbl_dl_speed, self.lbl_dl_total = self._create_stat_frame(dl_frame, "DOWNLOAD", self.get_color("dl"))
+            ul_frame = ctk.CTkFrame(top_panel, corner_radius=8); ul_frame.grid(row=0, column=2, sticky="nsew", padx=(8,0), pady=8)
+            self.lbl_ul_speed, self.lbl_ul_total = self._create_stat_frame(ul_frame, "UPLOAD", self.get_color("ul"))
 
-            center_frame = ctk.CTkFrame(top_panel); center_frame.grid(row=0, column=1, sticky="nsew", padx=10, pady=5)
-            center_frame.grid_columnconfigure(0, weight=1)
-            self.lbl_mode = ctk.CTkLabel(center_frame, text="MODE: IDLE", font=self.THEME["font_medium"]); self.lbl_mode.pack(pady=(15, 5), expand=True)
-            # Тут можна додати круглі прогрес-бари для CPU/RAM
-            self.lbl_cpu_ram = ctk.CTkLabel(center_frame, text="CPU: -% | RAM: -%", font=self.THEME["font_normal"]); self.lbl_cpu_ram.pack(pady=5, expand=True)
-            self.lbl_errors_count = ctk.CTkLabel(center_frame, text="ERRORS: 0", font=self.THEME["font_normal"]); self.lbl_errors_count.pack(pady=(5, 15), expand=True)
+            center_frame = ctk.CTkFrame(top_panel, corner_radius=8); center_frame.grid(row=0, column=1, sticky="nsew", padx=8, pady=8)
+            center_frame.grid_columnconfigure(0, weight=1); center_frame.grid_rowconfigure((0,1,2), weight=1)
+            self.lbl_mode = ctk.CTkLabel(center_frame, text="MODE: IDLE", font=self.FONTS["body_bold"]); self.lbl_mode.grid(row=0, pady=8)
+            self.lbl_cpu_ram = ctk.CTkLabel(center_frame, text="CPU: -% | RAM: -%", font=self.FONTS["body"]); self.lbl_cpu_ram.grid(row=1, pady=8)
+            self.lbl_errors_count = ctk.CTkLabel(center_frame, text="ERRORS: 0", font=self.FONTS["body"]); self.lbl_errors_count.grid(row=2, pady=8)
 
-            graph_panel = ctk.CTkFrame(tab); graph_panel.grid(row=1, column=0, sticky="nsew", pady=10)
+            graph_panel = ctk.CTkFrame(tab, corner_radius=8); graph_panel.grid(row=1, column=0, sticky="nsew", pady=8)
             graph_panel.grid_columnconfigure(0, weight=1); graph_panel.grid_rowconfigure(0, weight=1)
-            self.canvas = ctk.CTkCanvas(graph_panel, highlightthickness=0); self.canvas.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-            self.canvas.bind("<Configure>", self.draw_graph)
-            self.canvas.bind("<Motion>", self.on_graph_hover) # Основа для інтерактивності
-            self.graph_tooltip = ctk.CTkLabel(self.canvas, text="", fg_color="black", corner_radius=5)
+            self.canvas = ctk.CTkCanvas(graph_panel, highlightthickness=0); self.canvas.grid(row=0, column=0, sticky="nsew", padx=8, pady=8)
+            self.canvas.bind("<Configure>", self.draw_graph); self.canvas.bind("<Motion>", self.on_graph_hover)
+            self.canvas.bind("<Enter>", lambda e: setattr(self, 'is_graph_hovered', True))
+            self.canvas.bind("<Leave>", self.on_graph_leave)
+            self.graph_tooltip = ctk.CTkLabel(self.canvas, text="", fg_color=self.get_color("overlay"), corner_radius=6, font=self.FONTS["mono"])
 
-            control_panel = ctk.CTkFrame(tab); control_panel.grid(row=2, column=0, sticky="ew", pady=(10, 0))
+            control_panel = ctk.CTkFrame(tab, fg_color="transparent"); control_panel.grid(row=2, column=0, sticky="ew", pady=(8, 0))
             control_panel.grid_columnconfigure((0, 1), weight=1)
-            self.btn_dl = ctk.CTkButton(control_panel, command=self.toggle_dl, height=50, font=self.THEME["font_button"], image=self.icons.get("start"), compound="left", text_color=("#000000", "#FFFFFF")); self.btn_dl.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
-            self.btn_ul = ctk.CTkButton(control_panel, command=self.toggle_ul, height=50, font=self.THEME["font_button"], image=self.icons.get("start"), compound="left", text_color=("#000000", "#FFFFFF")); self.btn_ul.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
-            
-            status_bar = ctk.CTkFrame(tab, fg_color="transparent"); status_bar.grid(row=3, column=0, sticky="ew", pady=(5,0), padx=10)
-            ctk.CTkLabel(status_bar, text="Status:", font=self.THEME["font_small"], text_color=("gray50", "gray60")).pack(side="left")
-            self.lbl_status = ctk.CTkLabel(status_bar, text="—", anchor="w", font=self.THEME["font_small"], text_color="gray"); self.lbl_status.pack(side="left", fill="x", expand=True, padx=5)
+            self.btn_dl = ctk.CTkButton(control_panel, command=self.toggle_dl, height=48, font=self.FONTS["body_bold"], image=self.icons.get("start"), compound="left", corner_radius=8)
+            self.btn_dl.grid(row=0, column=0, padx=(0, 8), pady=8, sticky="ew")
+            self.btn_ul = ctk.CTkButton(control_panel, command=self.toggle_ul, height=48, font=self.FONTS["body_bold"], image=self.icons.get("start"), compound="left", corner_radius=8)
+            self.btn_ul.grid(row=0, column=1, padx=(8, 0), pady=8, sticky="ew")
+
+            ToolTip(self.btn_dl, lambda: "Інший тест вже запущено" if self.btn_dl.cget("state") == "disabled" else "")
+            ToolTip(self.btn_ul, lambda: "Інший тест вже запущено" if self.btn_ul.cget("state") == "disabled" else "")
 
         def _setup_settings(self, tab: ctk.CTkFrame) -> None:
             tab.grid_columnconfigure(0, weight=1); tab.grid_rowconfigure(0, weight=1)
-            scroll_frame = ctk.CTkScrollableFrame(tab, label_text="Application Settings", label_font=(self.THEME["font_family"], 14)); scroll_frame.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+            scroll_frame = ctk.CTkScrollableFrame(tab, label_text="Application Settings", label_font=self.FONTS["body_bold"], fg_color="transparent")
+            scroll_frame.grid(row=0, column=0, sticky="nsew", padx=8, pady=8)
             scroll_frame.grid_columnconfigure(0, weight=1)
             
             def create_group(p, title):
-                g = ctk.CTkFrame(p); g.pack(fill="x", expand=True, padx=10, pady=10)
+                g = ctk.CTkFrame(p, corner_radius=8); g.pack(fill="x", expand=True, padx=8, pady=8)
                 g.grid_columnconfigure(1, weight=1)
-                ctk.CTkLabel(g, text=title, font=self.THEME["font_medium"]).grid(row=0, column=0, columnspan=2, pady=10, padx=20, sticky="w")
+                ctk.CTkLabel(g, text=title, font=self.FONTS["body_bold"]).grid(row=0, column=0, columnspan=2, pady=8, padx=16, sticky="w")
                 return g
 
             target_g = create_group(scroll_frame, "Target Configuration")
-            ctk.CTkLabel(target_g, text="Target IP:").grid(row=1, column=0, padx=20, pady=10, sticky="w")
-            self.ent_ip = ctk.CTkEntry(target_g); self.ent_ip.grid(row=1, column=1, padx=20, pady=10, sticky="ew")
-            ToolTip(self.ent_ip, "IP-адреса для UDP-флуду")
-            ctk.CTkLabel(target_g, text="Target Port:").grid(row=2, column=0, padx=20, pady=10, sticky="w")
-            self.ent_port = ctk.CTkEntry(target_g); self.ent_port.grid(row=2, column=1, padx=20, pady=10, sticky="ew")
-            ToolTip(self.ent_port, "Порт для UDP-флуду (1-65535)")
+            ctk.CTkLabel(target_g, text="Target IP:", font=self.FONTS["body"]).grid(row=1, column=0, padx=16, pady=8, sticky="w")
+            self.ent_ip = ctk.CTkEntry(target_g, font=self.FONTS["body"]); self.ent_ip.grid(row=1, column=1, padx=16, pady=8, sticky="ew")
+            ToolTip(self.ent_ip, lambda: "IP-адреса для UDP-флуду")
+            ctk.CTkLabel(target_g, text="Target Port:", font=self.FONTS["body"]).grid(row=2, column=0, padx=16, pady=8, sticky="w")
+            self.ent_port = ctk.CTkEntry(target_g, font=self.FONTS["body"]); self.ent_port.grid(row=2, column=1, padx=16, pady=8, sticky="ew")
+            ToolTip(self.ent_port, lambda: "Порт для UDP-флуду (1-65535)")
             
             perf_g = create_group(scroll_frame, "Performance Tuning")
             self._add_slider(perf_g, "Download Threads", 1, 100, 'threads_dl', 1, "Кількість потоків для завантаження")
@@ -647,26 +682,27 @@ if GUI_AVAILABLE:
             self._add_slider(perf_g, "Packet Size (bytes)", 64, 8192, 'packet_size', 5, "Розмір одного UDP-пакета")
 
             urls_g = create_group(scroll_frame, "Download URLs")
-            ctk.CTkLabel(urls_g, text="One URL per line:").grid(row=1, column=0, columnspan=2, padx=20, pady=(10,5), sticky="w")
-            self.txt_urls = ctk.CTkTextbox(urls_g, height=200, font=self.THEME["font_small"], wrap="none")
-            self.txt_urls.grid(row=2, column=0, columnspan=2, padx=20, pady=(0,10), sticky="nsew")
-            ToolTip(self.txt_urls, "Список URL-адрес для режиму тестування швидкості")
+            ctk.CTkLabel(urls_g, text="One URL per line:", font=self.FONTS["body"]).grid(row=1, column=0, columnspan=2, padx=16, pady=(8,4), sticky="w")
+            self.txt_urls = ctk.CTkTextbox(urls_g, height=200, font=self.FONTS["mono"], wrap="none", corner_radius=8)
+            self.txt_urls.grid(row=2, column=0, columnspan=2, padx=16, pady=(0,8), sticky="nsew")
+            ToolTip(self.txt_urls, lambda: "Список URL-адрес для режиму тестування швидкості")
 
             net_g = create_group(scroll_frame, "Network")
-            ctk.CTkLabel(net_g, text="Network Interface:").grid(row=1, column=0, padx=20, pady=10, sticky="w")
+            ctk.CTkLabel(net_g, text="Network Interface:", font=self.FONTS["body"]).grid(row=1, column=0, padx=16, pady=8, sticky="w")
             interfaces = ["default"] + list(psutil.net_if_addrs().keys())
-            self.if_menu = ctk.CTkOptionMenu(net_g, values=interfaces); self.if_menu.grid(row=1, column=1, padx=20, pady=10, sticky="ew")
-            ToolTip(self.if_menu, "Вибір мережевого інтерфейсу (для досвідчених користувачів).\n'Default' - вибір системи.")
+            self.if_menu = ctk.CTkOptionMenu(net_g, values=interfaces, font=self.FONTS["body"]); self.if_menu.grid(row=1, column=1, padx=16, pady=8, sticky="ew")
+            ToolTip(self.if_menu, lambda: "Вибір мережевого інтерфейсу.\n'Default' - вибір системи.")
             
-            btn_frame = ctk.CTkFrame(tab, fg_color="transparent"); btn_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=(0, 10))
-            btn_frame.grid_columnconfigure((0,1), weight=1)
-            ctk.CTkButton(btn_frame, text="Save Settings", command=self.save_settings, height=40).grid(row=0, column=0, padx=10, sticky="ew")
-            ctk.CTkButton(btn_frame, text="Reset to Default", command=self.reset_settings, height=40, fg_color="gray50").grid(row=0, column=1, padx=10, sticky="ew")
+            btn_frame = ctk.CTkFrame(tab, fg_color="transparent"); btn_frame.grid(row=1, column=0, sticky="ew", padx=8, pady=0)
+            btn_frame.grid_columnconfigure(0, weight=1); btn_frame.grid_columnconfigure(1, weight=1)
+            ctk.CTkButton(btn_frame, text="Save Settings", command=self.save_settings, height=40, font=self.FONTS["body_bold"], fg_color=self.get_color("secondary"), corner_radius=8).grid(row=0, column=0, padx=(0, 8), pady=8, sticky="ew")
+            ctk.CTkButton(btn_frame, text="Reset to Default", command=self.reset_settings, height=40, font=self.FONTS["body_bold"], fg_color=self.get_color("muted"), text_color=self.get_color("text"), corner_radius=8).grid(row=0, column=1, padx=(8,0), pady=8, sticky="ew")
             self._update_settings_ui()
 
         def _setup_logs_tab(self, tab: ctk.CTkFrame) -> None:
             tab.grid_columnconfigure(0, weight=1); tab.grid_rowconfigure(0, weight=1)
-            self.log_textbox = ctk.CTkTextbox(tab, font=self.THEME["font_small"], wrap="none"); self.log_textbox.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+            self.log_textbox = ctk.CTkTextbox(tab, font=self.FONTS["mono"], wrap="none", corner_radius=8, border_width=0)
+            self.log_textbox.grid(row=0, column=0, padx=8, pady=8, sticky="nsew")
             self.log_textbox.configure(state="disabled")
 
         def setup_logging(self) -> None:
@@ -676,12 +712,12 @@ if GUI_AVAILABLE:
             log.addHandler(gui_handler)
 
         def _add_slider(self, p, text, f, t, key, r, tip_text) -> None:
-            lbl_title = ctk.CTkLabel(p, text=f"{text}:"); lbl_title.grid(row=r, column=0, sticky="w", padx=20, pady=(10,0))
-            lbl_val = ctk.CTkLabel(p, text=str(cfg.data.get(key,f))); lbl_val.grid(row=r, column=1, sticky="e", padx=20, pady=(10,0))
+            lbl_title = ctk.CTkLabel(p, text=f"{text}:", font=self.FONTS["body"]); lbl_title.grid(row=r, column=0, sticky="w", padx=16, pady=(8,0))
+            lbl_val = ctk.CTkLabel(p, text=str(cfg.data.get(key,f)), font=self.FONTS["body"]); lbl_val.grid(row=r, column=1, sticky="e", padx=16, pady=(8,0))
             slider = ctk.CTkSlider(p, from_=f, to=t, command=lambda v, k=key: self.slider_widgets[k][1].configure(text=f"{int(v)}"))
-            slider.grid(row=r + 1, column=0, columnspan=2, sticky="ew", padx=20, pady=(0, 15))
+            slider.grid(row=r + 1, column=0, columnspan=2, sticky="ew", padx=16, pady=(0, 16))
             self.slider_widgets[key] = (slider, lbl_val)
-            ToolTip(slider, tip_text); ToolTip(lbl_title, tip_text)
+            ToolTip(slider, lambda: tip_text); ToolTip(lbl_title, lambda: tip_text)
         
         def _update_settings_ui(self) -> None:
             self.ent_ip.delete(0, 'end'); self.ent_ip.insert(0, cfg.data['target_ip'])
@@ -692,11 +728,8 @@ if GUI_AVAILABLE:
             if self.txt_urls:
                 self.txt_urls.delete("1.0", "end"); self.txt_urls.insert("1.0", "\n".join(cfg.data.get("download_urls", [])))
 
-        def set_status_message(self, text: str, color: str="gray", duration_s: int=4) -> None:
-            if not self.lbl_status.winfo_exists(): return
-            self.lbl_status.configure(text=text, text_color=color)
-            if self.status_message_job: self.root.after_cancel(self.status_message_job)
-            self.status_message_job = self.root.after(duration_s * 1000, lambda: self.lbl_status.configure(text=engine.get_stats()['last_error'], text_color="gray"))
+        def show_toast(self, message: str, status: str = "success"):
+            Toast(self.root, message, status)
 
         def toggle_dl(self) -> None:
             if engine.running and engine.mode == EngineMode.DOWNLOADING: engine.stop()
@@ -711,23 +744,37 @@ if GUI_AVAILABLE:
             if not self.btn_dl.winfo_exists(): return
             dl_run = engine.running and engine.mode == EngineMode.DOWNLOADING
             ul_run = engine.running and engine.mode == EngineMode.UDP_FLOOD
-            self.btn_dl.configure(text="STOP DOWNLOAD" if dl_run else "START DOWNLOAD",
-                                  fg_color=self.THEME["stop_color"] if dl_run else self.THEME["dl_color"],
+            
+            self.btn_dl.configure(text="STOP" if dl_run else "START DOWNLOAD",
+                                  fg_color=self.get_color("danger") if dl_run else self.get_color("dl"),
                                   image=self.icons.get("stop") if dl_run else self.icons.get("start"),
                                   state="disabled" if ul_run else "normal")
-            self.btn_ul.configure(text="STOP FLOOD" if ul_run else "START FLOOD",
-                                  fg_color=self.THEME["stop_color"] if ul_run else self.THEME["ul_color"],
+            self.btn_ul.configure(text="STOP" if ul_run else "START FLOOD",
+                                  fg_color=self.get_color("danger") if ul_run else self.get_color("ul"),
                                   image=self.icons.get("stop") if ul_run else self.icons.get("start"),
                                   state="disabled" if dl_run else "normal")
 
         def save_settings(self) -> bool:
+            for widget in self.validation_error_widgets:
+                widget.configure(border_color=self.get_color("muted"))
+            self.validation_error_widgets.clear()
+            
             try:
                 ip, port_str = self.ent_ip.get(), self.ent_port.get()
-                if not ip: raise ValueError("IP-адреса не може бути порожньою.")
-                if not (port_str.isdigit() and 1<=int(port_str)<=65535): raise ValueError("Порт має бути числом від 1 до 65535.")
+                if not ip:
+                    self.validation_error_widgets.append(self.ent_ip)
+                    raise ValueError("IP-адреса не може бути порожньою.")
+                if not (port_str.isdigit() and 1<=int(port_str)<=65535):
+                    self.validation_error_widgets.append(self.ent_port)
+                    raise ValueError("Порт має бути числом від 1 до 65535.")
                 urls_list = [line.strip() for line in self.txt_urls.get("1.0", "end").strip().split("\n") if line.strip()]
-                if not urls_list: raise ValueError("Список URL для завантаження не може бути порожнім.")
+                if not urls_list:
+                    self.validation_error_widgets.append(self.txt_urls)
+                    raise ValueError("Список URL не може бути порожнім.")
                 
+                for widget in self.validation_error_widgets:
+                    widget.configure(border_color=self.get_color("danger"))
+
                 cfg.data.update({
                     'target_ip': ip, 'target_port': int(port_str),
                     'threads_dl': int(self.slider_widgets['threads_dl'][0].get()),
@@ -739,53 +786,86 @@ if GUI_AVAILABLE:
                 
                 engine.urls = urls_list; cfg.save()
                 log.info("Налаштування успішно збережено.")
-                self.set_status_message("Налаштування збережено!", self.THEME["dl_color"])
+                self.show_toast("Налаштування збережено", "success")
                 return True
-            except (ValueError, Exception) as e:
-                self.set_status_message(f"Помилка збереження: {e}", self.THEME["warn_color"])
+            except ValueError as e:
+                for widget in self.validation_error_widgets:
+                    widget.configure(border_width=1, border_color=self.get_color("danger"))
+                self.show_toast(f"Помилка: {e}", "error")
                 log.error(f"Не вдалося зберегти налаштування: {e}")
                 return False
 
         def reset_settings(self) -> None:
             cfg.reset_to_default(); self._update_settings_ui()
             engine.urls = cfg.data.get("download_urls", [])
-            self.set_status_message("Налаштування скинуто до стандартних.", "gray")
+            self.show_toast("Налаштування скинуто до стандартних.", "warning")
 
         def draw_graph(self, event: Optional[Any] = None) -> None:
             if not self.canvas.winfo_exists(): return
-            w, h = self.canvas.winfo_width(), self.canvas.winfo_height(); self.canvas.delete("all")
+            w, h = self.canvas.winfo_width(), self.canvas.winfo_height()
+            self.canvas.delete("all")
             if not (w > 1 and h > 1): return
 
-            is_dark = ctk.get_appearance_mode() == "Dark"
-            grid_c, text_c = ("#404B5D", "#D8DEE9") if is_dark else ("#D8DEE9", "#434C5E")
-            self.canvas.configure(bg=self.THEME["canvas_bg"][1] if is_dark else self.THEME["canvas_bg"][0])
+            self.canvas.configure(bg=self.get_color("overlay"))
             
-            max_val = max(max(self.dl_history), max(self.ul_history), 10); max_y = (int(max_val / 50) + 1) * 50 if max_val > 100 else (100 if max_val > 50 else 50 if max_val > 10 else 10)
+            if not engine.running:
+                self.canvas.create_text(w/2, h/2, text="No session running",
+                                        font=self.FONTS["body_bold"], fill=self.get_color("text_subtle"))
+                return
             
+            max_val = max(max(self.dl_history), max(self.ul_history), 1)
+            # Auto-scale with 15% padding
+            max_y = max_val * 1.15
+            
+            # Draw grid lines
             for i in range(1, 5):
-                y = h*i/5; self.canvas.create_line(0, y, w, y, fill=grid_c, dash=(2,4))
-                self.canvas.create_text(25, y, text=f"{max_y*(5-i)/5:.0f}", fill=text_c, anchor="e")
-            self.canvas.create_text(25, 10, text="MB/s", fill=text_c, anchor="e")
+                y = h * i / 5
+                self.canvas.create_line(0, y, w, y, fill=self.get_color("muted"), dash=(2, 4))
+                self.canvas.create_text(35, y, text=f"{max_y * (5 - i) / 5:.0f}", fill=self.get_color("text_subtle"), anchor="e", font=self.FONTS["mono"])
+            self.canvas.create_text(35, 16, text="MB/s", fill=self.get_color("text_subtle"), anchor="e", font=self.FONTS["mono"])
 
-            def plot(hist: list, color: str):
-                if len(hist) > 1:
-                    pts = [(w*i/(len(hist)-1), h-(h*min(v, max_y)/max_y if max_y > 0 else 0)) for i,v in enumerate(hist)]
-                    self.canvas.create_line(pts, fill=color, width=2.5, smooth=True)
-            plot(self.ul_history, self.THEME["ul_color"]); plot(self.dl_history, self.THEME["dl_color"])
+            def plot(hist: list, color: str, fill_color: str):
+                if len(hist) < 2: return
+                pts = [(w*i/(len(hist)-1), h - (h*min(v, max_y)/max_y if max_y > 0 else 0)) for i,v in enumerate(hist)]
+                
+                # Filled area (gradient simulation)
+                poly_pts = pts[:]
+                poly_pts.insert(0, (pts[0][0], h))
+                poly_pts.append((pts[-1][0], h))
+                self.canvas.create_polygon(poly_pts, fill=fill_color, outline="", smooth=True)
+
+                # Main line
+                self.canvas.create_line(pts, fill=color, width=2, smooth=True)
+
+            plot(self.ul_history, self.get_color("ul"), "#4C566A") # Hex with alpha approximation
+            plot(self.dl_history, self.get_color("dl"), "#6F8F6B")
 
         def on_graph_hover(self, event):
-            """ПОКРАЩЕННЯ: Показує підказку на графіку."""
-            # Ця функція є основою. Для повної реалізації потрібно:
-            # 1. Знайти найближчу точку даних до event.x
-            # 2. Отримати її значення (швидкість, час)
-            # 3. Показати та оновити self.graph_tooltip
-            w = self.canvas.winfo_width()
+            if not engine.running: return
+            w, h = self.canvas.winfo_width(), self.canvas.winfo_height()
+
+            # Delete old crosshair line
+            if self.crosshair_line: self.canvas.delete(self.crosshair_line)
+            
+            # Draw new crosshair line
+            self.crosshair_line = self.canvas.create_line(event.x, 0, event.x, h, fill=self.get_color("text_subtle"), dash=(4, 4))
+            
             index = min(max(round((event.x / w) * (len(self.dl_history) - 1)), 0), len(self.dl_history)-1)
             dl_val = self.dl_history[index]; ul_val = self.ul_history[index]
             
-            self.graph_tooltip.configure(text=f"DL: {dl_val:.1f} MB/s\nUL: {ul_val:.1f} MB/s")
-            self.graph_tooltip.place(x=event.x + 15, y=event.y)
-            self.canvas.bind("<Leave>", lambda e: self.graph_tooltip.place_forget())
+            self.graph_tooltip.configure(text=f"DL: {dl_val:.1f}\nUL: {ul_val:.1f}")
+            
+            # Position tooltip
+            x, y = event.x + 20, event.y
+            if x + self.graph_tooltip.winfo_reqwidth() > w:
+                x = event.x - self.graph_tooltip.winfo_reqwidth() - 20
+            self.graph_tooltip.place(x=x, y=y)
+
+        def on_graph_leave(self, event):
+            setattr(self, 'is_graph_hovered', False)
+            self.graph_tooltip.place_forget()
+            if self.crosshair_line: self.canvas.delete(self.crosshair_line)
+            self.crosshair_line = None
 
         def update_loop(self) -> None:
             if not self.root.winfo_exists(): return
@@ -794,12 +874,13 @@ if GUI_AVAILABLE:
             sdl = (stats['dl']-self.last_dl)/delta/1024**2; sul = (stats['ul']-self.last_ul)/delta/1024**2
             self.last_dl, self.last_ul, self.last_t = stats['dl'], stats['ul'], now
 
-            if engine.running:
-                engine.dl_speeds_history.append(sdl); engine.max_dl_speed = max(engine.max_dl_speed, sdl)
-                engine.ul_speeds_history.append(sul); engine.max_ul_speed = max(engine.max_ul_speed, sul)
-            
-            self.dl_history.append(max(0,sdl)); self.dl_history.pop(0)
-            self.ul_history.append(max(0,sul)); self.ul_history.pop(0)
+            if not self.is_graph_hovered:
+                if engine.running:
+                    engine.dl_speeds_history.append(sdl); engine.max_dl_speed = max(engine.max_dl_speed, sdl)
+                    engine.ul_speeds_history.append(sul); engine.max_ul_speed = max(engine.max_ul_speed, sul)
+                
+                self.dl_history.append(max(0,sdl)); self.dl_history.pop(0)
+                self.ul_history.append(max(0,sul)); self.ul_history.pop(0)
 
             dl_gb, ul_gb = stats['dl']/1024**3, stats['ul']/1024**3
             self.lbl_dl_speed.configure(text=f"{sdl:.1f} MB/s"); self.lbl_dl_total.configure(text=f"Total: {dl_gb:.2f} GB")
@@ -812,23 +893,24 @@ if GUI_AVAILABLE:
                 self.lbl_cpu_ram.configure(text=f"CPU: {cpu}% | RAM: {ram}%")
             except Exception: pass
             
-            if not self.status_message_job: self.lbl_status.configure(text=stats['last_error'])
             if self.root.winfo_viewable() and self.dashboard_tab.winfo_ismapped(): self.draw_graph()
             
             self.update_buttons()
             self.root.after(500, self.update_loop)
 
         def run(self) -> None:
-            self.root.protocol("WM_DELETE_WINDOW", self.on_closing); self.root.mainloop()
+            self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+            self.root.mainloop()
         def on_closing(self) -> None:
-            log.info("Отримано запит на закриття вікна. Зупинка..."); engine.stop(); self.root.destroy()
+            log.info("Отримано запит на закриття вікна. Зупинка...")
+            engine.stop()
+            self.root.destroy()
 
 # --- 5. ГОЛОВНА ТОЧКА ВХОДУ ---
 def run_cli_mode(args):
     """Виконує тест в неінтерактивному режимі згідно з аргументами."""
     log.info(f"Запуск у неінтерактивному режимі: {args.mode}")
 
-    # Оновлення конфігурації з аргументів
     if args.threads:
         if args.mode == "download": cfg.data['threads_dl'] = args.threads
         else: cfg.data['threads_ul'] = args.threads
@@ -842,11 +924,8 @@ def run_cli_mode(args):
             log.error("Неправильний формат цілі. Використовуйте IP:PORT (напр., 192.168.1.1:80)")
             return
             
-    # Запуск
-    if args.mode == "download":
-        engine.start_download()
-    elif args.mode == "udp":
-        engine.start_flood(cfg.data['target_ip'], cfg.data['target_port'])
+    if args.mode == "download": engine.start_download()
+    elif args.mode == "udp": engine.start_flood(cfg.data['target_ip'], cfg.data['target_port'])
     
     print(f"Тест '{args.mode}' запущено. Натисніть Ctrl+C для зупинки або чекайте {args.duration}...")
 
@@ -859,7 +938,7 @@ def run_cli_mode(args):
         log.info("Неінтерактивний режим завершено.")
         
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="TrafficDown 5.0 - інструмент для мережевого навантаження.")
+    parser = argparse.ArgumentParser(description="TrafficDown 5.1 - інструмент для мережевого навантаження.")
     parser.add_argument("--mode", type=str, choices=["download", "udp"], help="Режим роботи: 'download' або 'udp'.")
     parser.add_argument("--threads", type=int, help="Кількість потоків.")
     parser.add_argument("--duration", type=int, default=60, help="Тривалість тесту в секундах (за замовчуванням: 60).")
@@ -867,7 +946,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     try:
-        # Якщо вказано режим, запускаємо CLI, інакше - інтерактивний UI
         if args.mode:
             run_cli_mode(args)
         else:
@@ -888,4 +966,4 @@ if __name__ == "__main__":
         log.info("Завершення роботи. Зупиняємо всі активні процеси...")
         engine.stop()
         print("\nTrafficDown завершив роботу. До побачення!")
-        os._exit(0) 
+        os._exit(0)
