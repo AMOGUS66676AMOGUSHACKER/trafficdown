@@ -1,17 +1,18 @@
 # -*- coding: utf-8 -*-
 """
-TrafficDown Ultimate 5.0 (Visually Enhanced)
+TrafficDown Ultimate 5.2 (Community Enhanced)
 ---------------------------------------------
 Багатопотоковий інструмент для генерації мережевого навантаження (HTTP Download та UDP Flood)
 з підтримкою сучасного графічного (Windows) та консольного (всі системи) інтерфейсів.
 
-Version 5.1 (Visual Style Update):
-- Інтегровано новий візуальний стиль згідно з наданими вимогами.
-- GUI: Додано 8-px grid, нова палітра кольорів (Nord), уніфіковані шрифти.
-- GUI: Графік тепер має 15% відступ зверху, градієнтну заливку, інтерактивний crosshair та паузу при наведенні.
-- GUI: Реалізовано Toast-повідомлення, inline-валідацію для полів та "Empty State" для графіка.
-- GUI: Додано Tooltip для неактивних кнопок та авто-визначення теми ОС.
-- GUI: Стилі кнопок розділено на Primary, Danger, Secondary.
+Version 5.2 (GUI & TUI Improvements):
+- TUI: Додано інтерактивне меню налаштувань (клавіша 'c') для зміни потоків/розміру пакета.
+- TUI: На панель статистики додано показники тривалості сесії та максимальних швидкостей.
+- GUI: На графік додано легенду (DL/UL) та відображення максимальних швидкостей сесії.
+- GUI: У налаштуваннях додано кнопку для авто-визначення IP-адреси шлюзу.
+- GUI: У вкладку логів додано кнопки для очищення та збереження логу у файл.
+- GUI: Покращено стилі кнопок для більшої консистентності.
+- Загальні невеликі виправлення та оптимізації.
 """
 
 # --- 0. ІМПОРТИ ТА ГЛОБАЛЬНА КОНФІГУРАЦІЯ ---
@@ -31,6 +32,9 @@ from enum import Enum
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from typing import Dict, Any, Tuple, Optional, List
+# MODIFICATION: Import filedialog for the GUI save log feature
+from tkinter import filedialog
+
 
 # --- Системні константи ---
 IS_WINDOWS = os.name == 'nt'
@@ -135,7 +139,11 @@ class Config:
             try:
                 with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                     config_from_file = json.load(f)
-                return {**self.default, **config_from_file}
+                # MODIFICATION: Ensure all default keys exist in the loaded config
+                # This prevents errors if a new key is added to defaults but is missing in the user's file.
+                full_config = self.default.copy()
+                full_config.update(config_from_file)
+                return full_config
             except (json.JSONDecodeError, IOError) as e:
                 log.error(f"Не вдалося завантажити '{CONFIG_FILE}': {e}. Використовуються значення за замовчуванням.")
         return self.default.copy()
@@ -156,11 +164,20 @@ cfg = Config()
 def get_gateway_ip() -> str:
     """Намагається визначити IP-адресу шлюзу за замовчуванням."""
     try:
+        if IS_WINDOWS:
+            # More reliable method for Windows
+            import re
+            result = subprocess.check_output("ipconfig", universal_newlines=True)
+            gateways = re.findall(r"Default Gateway . . . . . . . . . : (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})", result)
+            if gateways:
+                return gateways[0]
+
+        # Fallback for other systems or if ipconfig fails
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             s.connect(("8.8.8.8", 80))
             local_ip = s.getsockname()[0]
         return ".".join(local_ip.split('.')[:3]) + ".1"
-    except socket.error as e:
+    except Exception as e:
         log.warning(
             f"Не вдалося визначити IP шлюзу: {e}. "
             "Використовується IP за замовчуванням."
@@ -203,6 +220,7 @@ class NetworkEngine:
 
     def start_download(self) -> None:
         if self.running: return
+        self.urls = cfg.data.get("download_urls", []) # MODIFICATION: Reload URLs from config
         if not self.urls:
             log.error("Неможливо запустити завантаження: список URL-адрес порожній.")
             return
@@ -229,16 +247,20 @@ class NetworkEngine:
     def stop(self) -> None:
         if self.running:
             log.info("ENGINE: Зупинка всіх мережевих операцій.")
+            # MODIFICATION: Ensure running is False before generating the report
+            # to prevent race conditions during stat calculation.
+            is_running_before_stop = self.running
             self.running = False
-            time.sleep(0.5)
-            self.generate_and_save_report()
+            time.sleep(0.5) # Give threads a moment to see the flag
+            if is_running_before_stop:
+                self.generate_and_save_report()
             self.mode = EngineMode.IDLE
     
     def _reset_stats(self):
         with self.lock:
             self.dl_total = self.ul_total = self.errors = 0
             self.last_error = "—"
-            self.start_time = None
+            self.start_time = time.time() # MODIFICATION: Start timer immediately for duration calc
             self.max_dl_speed = 0.0
             self.max_ul_speed = 0.0
             self.dl_speeds_history.clear()
@@ -284,9 +306,12 @@ class NetworkEngine:
 
     def get_stats(self) -> Dict[str, Any]:
         with self.lock:
+            duration = (time.time() - self.start_time) if self.start_time else 0
             return {
                 "dl": self.dl_total, "ul": self.ul_total, "err": self.errors,
-                "mode": self.mode.value, "active": self.running, "last_error": self.last_error
+                "mode": self.mode.value, "active": self.running, "last_error": self.last_error,
+                # MODIFICATION: Add more stats for direct use by UIs
+                "duration": duration, "max_dl": self.max_dl_speed, "max_ul": self.max_ul_speed
             }
 
     def generate_and_save_report(self) -> None:
@@ -315,7 +340,13 @@ class NetworkEngine:
         
         report_str = f"""
         --- ЗВІТ ПРО СЕСІЮ ---
-        Тривалість: {report['duration_seconds']} с...
+        Тривалість: {report['duration_seconds']:.2f} сек.
+        Режим: {report['mode']}
+        Всього DL/UL: {report['total_download_gb']:.3f} GB / {report['total_upload_gb']:.3f} GB
+        Середня швидкість DL/UL: {report['avg_download_mbs']:.2f} MB/s / {report['avg_upload_mbs']:.2f} MB/s
+        Макс. швидкість DL/UL: {report['max_download_mbs']:.2f} MB/s / {report['max_upload_mbs']:.2f} MB/s
+        Помилок: {report['errors_count']}
+        --- КІНЕЦЬ ЗВІТУ ---
         """
         log.info(report_str)
 
@@ -331,7 +362,6 @@ class NetworkEngine:
 engine = NetworkEngine()
 
 # --- 3. КОНСОЛЬНИЙ ІНТЕРФЕЙС (TUI) ---
-# ... (TUI class remains unchanged, as requested modifications were for the GUI)
 class Sparkline:
     """A simple sparkline generator for Rich."""
     def __init__(self, data, color="green"):
@@ -359,6 +389,10 @@ class TermuxUI:
 
     def _format_speed(self, a_bytes: float) -> str: return f"[bold green]{a_bytes / 1024**2:.2f}[/] MB/s"
     def _format_total(self, a_bytes: float) -> str: return f"{a_bytes / 1024**3:.3f} GB"
+    # MODIFICATION: Helper for formatting duration
+    def _format_duration(self, seconds: float) -> str:
+        s = int(seconds)
+        return f"{s//3600:02d}:{s//60%60:02d}:{s%60:02d}"
 
     def generate_dashboard(self) -> Panel:
         stats = engine.get_stats(); now = time.time(); delta = max(now - self.last_t, 1e-6)
@@ -371,14 +405,27 @@ class TermuxUI:
             self.ul_spark_data.append(spd_ul_mbs); self.ul_spark_data.pop(0)
             engine.dl_speeds_history.append(spd_dl_mbs); engine.max_dl_speed = max(engine.max_dl_speed, spd_dl_mbs)
             engine.ul_speeds_history.append(spd_ul_mbs); engine.max_ul_speed = max(engine.max_ul_speed, spd_ul_mbs)
-        
+        elif stats['mode'] == 'IDLE':
+            # MODIFICATION: Reset sparklines when idle
+            if any(self.dl_spark_data) or any(self.ul_spark_data):
+                self.dl_spark_data = [0.0] * 30
+                self.ul_spark_data = [0.0] * 30
+
         stats_table = Table(box=None, show_header=False, padding=(0,1))
         stats_table.add_column(style="cyan", justify="right"); stats_table.add_column(style="bold white", justify="left"); stats_table.add_column()
         
         status_color = 'green' if stats['active'] else 'red'
         stats_table.add_row("Статус:", f"[{status_color}]{stats['mode']}[/]")
+        # MODIFICATION: Add Duration row
+        if stats['active']:
+            stats_table.add_row("Тривалість:", f"[yellow]{self._format_duration(stats['duration'])}[/]")
+
         stats_table.add_row("Швидкість DL:", self._format_speed(spd_dl), Sparkline(self.dl_spark_data, "green"))
         stats_table.add_row("Швидкість UL:", self._format_speed(spd_ul).replace("green", "red"), Sparkline(self.ul_spark_data, "red"))
+        # MODIFICATION: Add Max Speed rows
+        stats_table.add_row("Макс. DL:", f"[bold green]{stats['max_dl']:.2f}[/] MB/s")
+        stats_table.add_row("Макс. UL:", f"[bold red]{stats['max_ul']:.2f}[/] MB/s")
+
         stats_table.add_row("Всього DL:", f"[green]{self._format_total(stats['dl'])}[/]")
         stats_table.add_row("Всього UL:", f"[red]{self._format_total(stats['ul'])}[/]")
         stats_table.add_row("Помилки:", f"[yellow]{stats['err']}[/]")
@@ -387,14 +434,16 @@ class TermuxUI:
             cpu, ram = psutil.cpu_percent(), psutil.virtual_memory().percent
             cpu_color = 'green' if cpu < 70 else 'yellow' if cpu < 90 else 'red'
             ram_color = 'green' if ram < 80 else 'yellow' if ram < 90 else 'red'
-            res_text = f"CPU: [bold {cpu_color}]{cpu}%[/] | RAM: [bold {ram_color}]{ram}%[/]"
+            res_text = f"CPU: [bold {cpu_color}]{cpu:.1f}%[/] | RAM: [bold {ram_color}]{ram:.1f}%[/]"
         except Exception: res_text = "N/A"
 
         gateway_ip = cfg.data.get('target_ip', '192.168.0.1')
+        # MODIFICATION: Updated menu text
         menu_text = (
             "[bold cyan]1.[/] Завантаження (тест швидкості)\n"
             f"[bold cyan]2.[/] UDP Flood на шлюз ([dim]{gateway_ip}[/])\n"
             f"[bold cyan]3.[/] UDP Flood на власну ціль\n"
+            f"[bold cyan]c.[/] Налаштування\n"
             f"[bold cyan]s.[/] Зупинити поточну операцію\n\n"
             f"[bold red]q.[/] Вихід"
         )
@@ -406,42 +455,79 @@ class TermuxUI:
         )
         grid.add_row(Panel(Align.center(res_text), title="[bold blue]Система[/]"), Panel(f"[dim]{stats['last_error']}[/]", title="[bold yellow]Остання помилка[/]"))
         
-        return Panel(grid, title="[bold green]TRAFFICDOWN 5.0[/]", border_style="green", subtitle="[yellow]Введіть опцію та натисніть Enter[/]")
+        return Panel(grid, title="[bold green]TRAFFICDOWN 5.2[/]", border_style="green", subtitle="[yellow]Введіть опцію та натисніть Enter[/]")
+
+    # MODIFICATION: New method to handle configuration
+    def _show_config_menu(self):
+        """Displays a menu to edit configuration settings."""
+        self.console.clear()
+        self.console.print(Panel("[bold green]Налаштування[/]", expand=False))
+        
+        cfg.data['threads_dl'] = IntPrompt.ask(
+            f"К-ть потоків для завантаження", default=cfg.data['threads_dl']
+        )
+        cfg.data['threads_ul'] = IntPrompt.ask(
+            f"К-ть потоків для UDP Flood", default=cfg.data['threads_ul']
+        )
+        cfg.data['packet_size'] = IntPrompt.ask(
+            f"Розмір UDP-пакета (байт)", default=cfg.data['packet_size']
+        )
+        
+        cfg.save()
+        self.console.print("\n[bold green]Налаштування збережено![/]")
+        time.sleep(1.5)
+        self.console.clear()
 
     def run(self) -> None:
         self.console.clear()
         with Live(self.generate_dashboard(), console=self.console, screen=True, refresh_per_second=4, vertical_overflow="visible") as live:
-            def get_input():
-                choice = self.console.input("[bold yellow]> [/]").strip().lower()
-                
-                if engine.running and choice != 's':
-                    live.console.print("[bold yellow]Спочатку зупиніть поточну операцію (s)![/]")
-                    return
+            # MODIFICATION: Using a threaded input to not block the Live display
+            # This is a more robust way than the original implementation.
+            from queue import Queue
+            input_queue = Queue()
 
-                action = None
-                if choice == '1': action = engine.start_download
-                elif choice == '2': action = lambda: engine.start_flood(cfg.data.get('target_ip'), cfg.data.get('target_port'))
-                elif choice == '3':
-                    try:
-                        live.stop(); self.console.clear()
-                        ip = Prompt.ask("[cyan]Введіть IP[/cyan]", default=cfg.data['target_ip'])
-                        port = IntPrompt.ask("[cyan]Введіть порт[/cyan]", default=cfg.data['target_port'])
-                        if not (0 < port < 65536): raise ValueError("Некоректний порт.")
-                        action = lambda: engine.start_flood(ip, port)
-                        live.start()
-                    except (ValueError, Exception) as e:
-                        live.start(); live.console.print(f"\n[bold red]Помилка: {e}[/]"); time.sleep(2)
-                elif choice == 's': action = engine.stop
-                elif choice in ('q', 'й'): return "exit"
-                if action: action()
+            def get_input_thread():
+                while True:
+                    inp = self.console.input()
+                    input_queue.put(inp)
+            
+            input_thread = threading.Thread(target=get_input_thread, daemon=True)
+            input_thread.start()
 
-            input_thread = threading.Thread(target=lambda: setattr(threading.current_thread(), 'result', get_input()), daemon=True)
             while True:
                 live.update(self.generate_dashboard())
-                if not input_thread.is_alive():
-                    if getattr(input_thread, 'result', None) == 'exit': break
-                    input_thread = threading.Thread(target=lambda: setattr(threading.current_thread(), 'result', get_input()), daemon=True)
-                    input_thread.start()
+
+                if not input_queue.empty():
+                    choice = input_queue.get().strip().lower()
+
+                    if engine.running and choice not in ('s', 'q', 'й'):
+                        live.console.print("[bold yellow]Спочатку зупиніть поточну операцію (s)![/]")
+                        continue
+                    
+                    if choice == '1': engine.start_download()
+                    elif choice == '2': engine.start_flood(get_gateway_ip(), cfg.data.get('target_port'))
+                    elif choice == '3':
+                        try:
+                            live.stop() # Pause live display for prompts
+                            ip = Prompt.ask("[cyan]Введіть IP[/cyan]", default=cfg.data['target_ip'])
+                            port = IntPrompt.ask("[cyan]Введіть порт[/cyan]", default=cfg.data['target_port'])
+                            if not (0 < port < 65536): raise ValueError("Некоректний порт.")
+                            engine.start_flood(ip, port)
+                        except (ValueError, Exception) as e:
+                            live.console.print(f"\n[bold red]Помилка: {e}[/]")
+                            time.sleep(2)
+                        finally:
+                            live.start() # Resume live display
+                    elif choice == 'c':
+                        live.stop()
+                        self._show_config_menu()
+                        live.start()
+                    elif choice == 's': engine.stop()
+                    elif choice in ('q', 'й'):
+                        return
+                    else:
+                        live.console.print("[bold red]Невідома команда.[/]")
+
                 time.sleep(0.1)
 
 # --- 4. ГРАФІЧНИЙ ІНТЕРФЕЙС (GUI) ---
@@ -551,7 +637,7 @@ if GUI_AVAILABLE:
 
         def __init__(self) -> None:
             self.root = ctk.CTk()
-            self.root.title("TrafficDown Ultimate 5.1")
+            self.root.title("TrafficDown Ultimate 5.2")
             self.root.geometry("1000x750")
             self.root.minsize(900, 700)
             ctk.set_appearance_mode("System")
@@ -633,14 +719,24 @@ if GUI_AVAILABLE:
             self.lbl_ul_speed, self.lbl_ul_total = self._create_stat_frame(ul_frame, "UPLOAD", self.get_color("ul"))
 
             center_frame = ctk.CTkFrame(top_panel, corner_radius=8); center_frame.grid(row=0, column=1, sticky="nsew", padx=8, pady=8)
-            center_frame.grid_columnconfigure(0, weight=1); center_frame.grid_rowconfigure((0,1,2), weight=1)
-            self.lbl_mode = ctk.CTkLabel(center_frame, text="MODE: IDLE", font=self.FONTS["body_bold"]); self.lbl_mode.grid(row=0, pady=8)
-            self.lbl_cpu_ram = ctk.CTkLabel(center_frame, text="CPU: -% | RAM: -%", font=self.FONTS["body"]); self.lbl_cpu_ram.grid(row=1, pady=8)
-            self.lbl_errors_count = ctk.CTkLabel(center_frame, text="ERRORS: 0", font=self.FONTS["body"]); self.lbl_errors_count.grid(row=2, pady=8)
+            center_frame.grid_columnconfigure(0, weight=1); center_frame.grid_rowconfigure((0,1,2,3), weight=1)
+            self.lbl_mode = ctk.CTkLabel(center_frame, text="MODE: IDLE", font=self.FONTS["body_bold"]); self.lbl_mode.grid(row=0)
+            self.lbl_duration = ctk.CTkLabel(center_frame, text="Duration: 00:00:00", font=self.FONTS["body"]); self.lbl_duration.grid(row=1)
+            self.lbl_cpu_ram = ctk.CTkLabel(center_frame, text="CPU: -% | RAM: -%", font=self.FONTS["body"]); self.lbl_cpu_ram.grid(row=2)
+            self.lbl_errors_count = ctk.CTkLabel(center_frame, text="ERRORS: 0", font=self.FONTS["body"]); self.lbl_errors_count.grid(row=3)
 
             graph_panel = ctk.CTkFrame(tab, corner_radius=8); graph_panel.grid(row=1, column=0, sticky="nsew", pady=8)
-            graph_panel.grid_columnconfigure(0, weight=1); graph_panel.grid_rowconfigure(0, weight=1)
-            self.canvas = ctk.CTkCanvas(graph_panel, highlightthickness=0); self.canvas.grid(row=0, column=0, sticky="nsew", padx=8, pady=8)
+            graph_panel.grid_columnconfigure(0, weight=1); graph_panel.grid_rowconfigure(1, weight=1)
+            
+            # MODIFICATION: Add max speed labels to graph panel
+            max_speed_frame = ctk.CTkFrame(graph_panel, fg_color="transparent")
+            max_speed_frame.grid(row=0, column=0, sticky="ew", padx=8, pady=(8,0))
+            self.lbl_max_dl = ctk.CTkLabel(max_speed_frame, text="Max DL: 0.0 MB/s", font=self.FONTS["body"], text_color=self.get_color("dl"))
+            self.lbl_max_dl.pack(side="left", padx=10)
+            self.lbl_max_ul = ctk.CTkLabel(max_speed_frame, text="Max UL: 0.0 MB/s", font=self.FONTS["body"], text_color=self.get_color("ul"))
+            self.lbl_max_ul.pack(side="left", padx=10)
+
+            self.canvas = ctk.CTkCanvas(graph_panel, highlightthickness=0); self.canvas.grid(row=1, column=0, sticky="nsew", padx=8, pady=8)
             self.canvas.bind("<Configure>", self.draw_graph); self.canvas.bind("<Motion>", self.on_graph_hover)
             self.canvas.bind("<Enter>", lambda e: setattr(self, 'is_graph_hovered', True))
             self.canvas.bind("<Leave>", self.on_graph_leave)
@@ -665,13 +761,17 @@ if GUI_AVAILABLE:
             def create_group(p, title):
                 g = ctk.CTkFrame(p, corner_radius=8); g.pack(fill="x", expand=True, padx=8, pady=8)
                 g.grid_columnconfigure(1, weight=1)
-                ctk.CTkLabel(g, text=title, font=self.FONTS["body_bold"]).grid(row=0, column=0, columnspan=2, pady=8, padx=16, sticky="w")
+                ctk.CTkLabel(g, text=title, font=self.FONTS["body_bold"]).grid(row=0, column=0, columnspan=3, pady=8, padx=16, sticky="w")
                 return g
 
             target_g = create_group(scroll_frame, "Target Configuration")
             ctk.CTkLabel(target_g, text="Target IP:", font=self.FONTS["body"]).grid(row=1, column=0, padx=16, pady=8, sticky="w")
             self.ent_ip = ctk.CTkEntry(target_g, font=self.FONTS["body"]); self.ent_ip.grid(row=1, column=1, padx=16, pady=8, sticky="ew")
+            # MODIFICATION: Add auto-detect gateway button
+            self.btn_detect_ip = ctk.CTkButton(target_g, text="Auto-Detect", width=100, font=self.FONTS["body"], command=self._autodetect_gateway, fg_color=self.get_color("secondary"))
+            self.btn_detect_ip.grid(row=1, column=2, padx=(0, 16), pady=8)
             ToolTip(self.ent_ip, lambda: "IP-адреса для UDP-флуду")
+            
             ctk.CTkLabel(target_g, text="Target Port:", font=self.FONTS["body"]).grid(row=2, column=0, padx=16, pady=8, sticky="w")
             self.ent_port = ctk.CTkEntry(target_g, font=self.FONTS["body"]); self.ent_port.grid(row=2, column=1, padx=16, pady=8, sticky="ew")
             ToolTip(self.ent_port, lambda: "Порт для UDP-флуду (1-65535)")
@@ -682,6 +782,7 @@ if GUI_AVAILABLE:
             self._add_slider(perf_g, "Packet Size (bytes)", 64, 8192, 'packet_size', 5, "Розмір одного UDP-пакета")
 
             urls_g = create_group(scroll_frame, "Download URLs")
+            urls_g.grid_columnconfigure(0, weight=1) # Make sure textbox expands
             ctk.CTkLabel(urls_g, text="One URL per line:", font=self.FONTS["body"]).grid(row=1, column=0, columnspan=2, padx=16, pady=(8,4), sticky="w")
             self.txt_urls = ctk.CTkTextbox(urls_g, height=200, font=self.FONTS["mono"], wrap="none", corner_radius=8)
             self.txt_urls.grid(row=2, column=0, columnspan=2, padx=16, pady=(0,8), sticky="nsew")
@@ -695,15 +796,63 @@ if GUI_AVAILABLE:
             
             btn_frame = ctk.CTkFrame(tab, fg_color="transparent"); btn_frame.grid(row=1, column=0, sticky="ew", padx=8, pady=0)
             btn_frame.grid_columnconfigure(0, weight=1); btn_frame.grid_columnconfigure(1, weight=1)
-            ctk.CTkButton(btn_frame, text="Save Settings", command=self.save_settings, height=40, font=self.FONTS["body_bold"], fg_color=self.get_color("secondary"), corner_radius=8).grid(row=0, column=0, padx=(0, 8), pady=8, sticky="ew")
+            # MODIFICATION: Changed Save button color to accent
+            ctk.CTkButton(btn_frame, text="Save Settings", command=self.save_settings, height=40, font=self.FONTS["body_bold"], fg_color=self.get_color("accent"), corner_radius=8).grid(row=0, column=0, padx=(0, 8), pady=8, sticky="ew")
             ctk.CTkButton(btn_frame, text="Reset to Default", command=self.reset_settings, height=40, font=self.FONTS["body_bold"], fg_color=self.get_color("muted"), text_color=self.get_color("text"), corner_radius=8).grid(row=0, column=1, padx=(8,0), pady=8, sticky="ew")
             self._update_settings_ui()
+        
+        # MODIFICATION: New method to auto-detect gateway IP
+        def _autodetect_gateway(self):
+            detected_ip = get_gateway_ip()
+            self.ent_ip.delete(0, 'end')
+            self.ent_ip.insert(0, detected_ip)
+            log.info(f"Визначено IP шлюзу: {detected_ip}")
+            self.show_toast(f"IP шлюзу встановлено: {detected_ip}", "success")
 
         def _setup_logs_tab(self, tab: ctk.CTkFrame) -> None:
             tab.grid_columnconfigure(0, weight=1); tab.grid_rowconfigure(0, weight=1)
             self.log_textbox = ctk.CTkTextbox(tab, font=self.FONTS["mono"], wrap="none", corner_radius=8, border_width=0)
             self.log_textbox.grid(row=0, column=0, padx=8, pady=8, sticky="nsew")
             self.log_textbox.configure(state="disabled")
+
+            # MODIFICATION: Add buttons to the log tab
+            log_btn_frame = ctk.CTkFrame(tab, fg_color="transparent")
+            log_btn_frame.grid(row=1, column=0, sticky="ew", padx=8, pady=8)
+            ctk.CTkButton(log_btn_frame, text="Clear Log", command=self._clear_log, height=40, fg_color=self.get_color("muted"), text_color=self.get_color("text")).pack(side="left", padx=(0, 8))
+            ctk.CTkButton(log_btn_frame, text="Save Log As...", command=self._save_log, height=40, fg_color=self.get_color("secondary")).pack(side="left")
+
+        # MODIFICATION: New method to clear log textbox
+        def _clear_log(self):
+            if self.log_textbox.winfo_exists():
+                self.log_textbox.configure(state="normal")
+                self.log_textbox.delete("1.0", "end")
+                self.log_textbox.configure(state="disabled")
+                log.info("Екранний лог очищено.")
+                self.show_toast("Лог на екрані очищено", "success")
+
+        # MODIFICATION: New method to save log to a file
+        def _save_log(self):
+            try:
+                log_content = self.log_textbox.get("1.0", "end")
+                if not log_content.strip():
+                    self.show_toast("Лог порожній, нічого зберігати", "warning")
+                    return
+                
+                filepath = filedialog.asksaveasfilename(
+                    title="Save Log As",
+                    defaultextension=".log",
+                    filetypes=[("Log files", "*.log"), ("Text files", "*.txt"), ("All files", "*.*")],
+                    initialfile=f"TrafficDown_GUI_Log_{datetime.now():%Y-%m-%d_%H-%M-%S}.log"
+                )
+
+                if filepath:
+                    with open(filepath, 'w', encoding='utf-8') as f:
+                        f.write(log_content)
+                    log.info(f"Лог з екрану збережено у файл: {filepath}")
+                    self.show_toast("Лог успішно збережено", "success")
+            except Exception as e:
+                log.error(f"Помилка збереження логу: {e}")
+                self.show_toast(f"Помилка збереження: {e}", "error")
 
         def setup_logging(self) -> None:
             gui_handler = GUILogHandler(self.log_textbox)
@@ -713,9 +862,9 @@ if GUI_AVAILABLE:
 
         def _add_slider(self, p, text, f, t, key, r, tip_text) -> None:
             lbl_title = ctk.CTkLabel(p, text=f"{text}:", font=self.FONTS["body"]); lbl_title.grid(row=r, column=0, sticky="w", padx=16, pady=(8,0))
-            lbl_val = ctk.CTkLabel(p, text=str(cfg.data.get(key,f)), font=self.FONTS["body"]); lbl_val.grid(row=r, column=1, sticky="e", padx=16, pady=(8,0))
+            lbl_val = ctk.CTkLabel(p, text=str(cfg.data.get(key,f)), font=self.FONTS["body"]); lbl_val.grid(row=r, column=1, sticky="e", padx=(0,16), pady=(8,0))
             slider = ctk.CTkSlider(p, from_=f, to=t, command=lambda v, k=key: self.slider_widgets[k][1].configure(text=f"{int(v)}"))
-            slider.grid(row=r + 1, column=0, columnspan=2, sticky="ew", padx=16, pady=(0, 16))
+            slider.grid(row=r + 1, column=0, columnspan=3, sticky="ew", padx=16, pady=(0, 16))
             self.slider_widgets[key] = (slider, lbl_val)
             ToolTip(slider, lambda: tip_text); ToolTip(lbl_title, lambda: tip_text)
         
@@ -738,7 +887,8 @@ if GUI_AVAILABLE:
         def toggle_ul(self) -> None:
             if engine.running and engine.mode == EngineMode.UDP_FLOOD: engine.stop()
             elif not engine.running:
-                if self.save_settings(): engine.start_flood(cfg.data['target_ip'], cfg.data['target_port'])
+                if self.save_settings(show_toast=False): # Don't show toast if we are starting a test
+                    engine.start_flood(cfg.data['target_ip'], cfg.data['target_port'])
         
         def update_buttons(self) -> None:
             if not self.btn_dl.winfo_exists(): return
@@ -754,7 +904,7 @@ if GUI_AVAILABLE:
                                   image=self.icons.get("stop") if ul_run else self.icons.get("start"),
                                   state="disabled" if dl_run else "normal")
 
-        def save_settings(self) -> bool:
+        def save_settings(self, show_toast: bool = True) -> bool:
             for widget in self.validation_error_widgets:
                 widget.configure(border_color=self.get_color("muted"))
             self.validation_error_widgets.clear()
@@ -786,12 +936,12 @@ if GUI_AVAILABLE:
                 
                 engine.urls = urls_list; cfg.save()
                 log.info("Налаштування успішно збережено.")
-                self.show_toast("Налаштування збережено", "success")
+                if show_toast: self.show_toast("Налаштування збережено", "success")
                 return True
             except ValueError as e:
                 for widget in self.validation_error_widgets:
                     widget.configure(border_width=1, border_color=self.get_color("danger"))
-                self.show_toast(f"Помилка: {e}", "error")
+                if show_toast: self.show_toast(f"Помилка: {e}", "error")
                 log.error(f"Не вдалося зберегти налаштування: {e}")
                 return False
 
@@ -808,9 +958,15 @@ if GUI_AVAILABLE:
 
             self.canvas.configure(bg=self.get_color("overlay"))
             
-            if not engine.running:
-                self.canvas.create_text(w/2, h/2, text="No session running",
-                                        font=self.FONTS["body_bold"], fill=self.get_color("text_subtle"))
+            # MODIFICATION: Add legend
+            self.canvas.create_rectangle(w - 110, 10, w - 95, 25, fill=self.get_color("dl"), outline="")
+            self.canvas.create_text(w - 90, 17, text="Download", anchor="w", fill=self.get_color("text"), font=self.FONTS["body"])
+            self.canvas.create_rectangle(w - 110, 30, w - 95, 45, fill=self.get_color("ul"), outline="")
+            self.canvas.create_text(w - 90, 37, text="Upload", anchor="w", fill=self.get_color("text"), font=self.FONTS["body"])
+
+            if not engine.running and not any(self.dl_history) and not any(self.ul_history):
+                self.canvas.create_text(w/2, h/2, text="No session running. Start a test to see the graph.",
+                                        font=self.FONTS["body_bold"], fill=self.get_color("text_subtle"), width=w-50)
                 return
             
             max_val = max(max(self.dl_history), max(self.ul_history), 1)
@@ -832,16 +988,20 @@ if GUI_AVAILABLE:
                 poly_pts = pts[:]
                 poly_pts.insert(0, (pts[0][0], h))
                 poly_pts.append((pts[-1][0], h))
-                self.canvas.create_polygon(poly_pts, fill=fill_color, outline="", smooth=True)
+                # MODIFICATION: Use a more subtle fill color for the gradient effect
+                # This requires getting the color in hex and adding an alpha, which is complex in tkinter.
+                # A simpler approach is to use a pre-defined subtle color.
+                fill_color_subtle = self.get_color("surface") if ctk.get_appearance_mode() == "Light" else "#434C5E"
+                self.canvas.create_polygon(poly_pts, fill=fill_color_subtle, outline="", smooth=True)
 
                 # Main line
                 self.canvas.create_line(pts, fill=color, width=2, smooth=True)
 
-            plot(self.ul_history, self.get_color("ul"), "#4C566A") # Hex with alpha approximation
-            plot(self.dl_history, self.get_color("dl"), "#6F8F6B")
+            plot(self.ul_history, self.get_color("ul"), self.get_color("ul"))
+            plot(self.dl_history, self.get_color("dl"), self.get_color("dl"))
 
         def on_graph_hover(self, event):
-            if not engine.running: return
+            if not engine.running and not any(self.dl_history) and not any(self.ul_history): return
             w, h = self.canvas.winfo_width(), self.canvas.winfo_height()
 
             # Delete old crosshair line
@@ -881,6 +1041,12 @@ if GUI_AVAILABLE:
                 
                 self.dl_history.append(max(0,sdl)); self.dl_history.pop(0)
                 self.ul_history.append(max(0,sul)); self.ul_history.pop(0)
+            
+            # MODIFICATION: Reset history if idle and history is not empty
+            if not engine.running and time.time() - (engine.start_time or 0) > 1:
+                if any(self.dl_history) or any(self.ul_history):
+                    self.dl_history = [0.0] * 50
+                    self.ul_history = [0.0] * 50
 
             dl_gb, ul_gb = stats['dl']/1024**3, stats['ul']/1024**3
             self.lbl_dl_speed.configure(text=f"{sdl:.1f} MB/s"); self.lbl_dl_total.configure(text=f"Total: {dl_gb:.2f} GB")
@@ -888,12 +1054,24 @@ if GUI_AVAILABLE:
             self.lbl_mode.configure(text=f"MODE: {stats['mode']}")
             self.lbl_errors_count.configure(text=f"ERRORS: {stats['err']}")
             
+            # MODIFICATION: Update duration and max speed labels
+            if stats['active']:
+                s = int(stats['duration'])
+                self.lbl_duration.configure(text=f"Duration: {s//3600:02d}:{s//60%60:02d}:{s%60:02d}")
+            else:
+                self.lbl_duration.configure(text="Duration: 00:00:00")
+            
+            self.lbl_max_dl.configure(text=f"Max DL: {stats['max_dl']:.1f} MB/s")
+            self.lbl_max_ul.configure(text=f"Max UL: {stats['max_ul']:.1f} MB/s")
+
             try:
                 cpu, ram = psutil.cpu_percent(), psutil.virtual_memory().percent
-                self.lbl_cpu_ram.configure(text=f"CPU: {cpu}% | RAM: {ram}%")
+                self.lbl_cpu_ram.configure(text=f"CPU: {cpu:.1f}% | RAM: {ram:.1f}%")
             except Exception: pass
             
-            if self.root.winfo_viewable() and self.dashboard_tab.winfo_ismapped(): self.draw_graph()
+            # Redraw graph only if dashboard is visible
+            if self.root.winfo_viewable() and self.dashboard_tab.winfo_ismapped():
+                self.draw_graph()
             
             self.update_buttons()
             self.root.after(500, self.update_loop)
@@ -927,39 +1105,55 @@ def run_cli_mode(args):
     if args.mode == "download": engine.start_download()
     elif args.mode == "udp": engine.start_flood(cfg.data['target_ip'], cfg.data['target_port'])
     
-    print(f"Тест '{args.mode}' запущено. Натисніть Ctrl+C для зупинки або чекайте {args.duration}...")
+    print(f"Тест '{args.mode}' запущено. Натисніть Ctrl+C для зупинки або чекайте {args.duration} сек...")
 
+    start_t = time.time()
     try:
-        time.sleep(args.duration)
+        while time.time() - start_t < args.duration:
+            # Live stats for CLI mode
+            stats = engine.get_stats()
+            spd_dl = (stats['dl'] - run_cli_mode.last_dl) / 1
+            spd_ul = (stats['ul'] - run_cli_mode.last_ul) / 1
+            run_cli_mode.last_dl = stats['dl']
+            run_cli_mode.last_ul = stats['ul']
+            print(f"\rDL: {spd_dl/1024**2:.2f} MB/s | UL: {spd_ul/1024**2:.2f} MB/s | Total DL: {stats['dl']/1024**3:.3f} GB | Errors: {stats['err']}   ", end="")
+            time.sleep(1)
     except KeyboardInterrupt:
         log.info("Тест зупинено користувачем.")
     finally:
+        print("\n") # Newline after the live stats
         engine.stop()
         log.info("Неінтерактивний режим завершено.")
-        
+
+# Add attributes to function for state
+run_cli_mode.last_dl = 0
+run_cli_mode.last_ul = 0
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="TrafficDown 5.1 - інструмент для мережевого навантаження.")
+    parser = argparse.ArgumentParser(description="TrafficDown 5.2 - інструмент для мережевого навантаження.")
     parser.add_argument("--mode", type=str, choices=["download", "udp"], help="Режим роботи: 'download' або 'udp'.")
     parser.add_argument("--threads", type=int, help="Кількість потоків.")
     parser.add_argument("--duration", type=int, default=60, help="Тривалість тесту в секундах (за замовчуванням: 60).")
     parser.add_argument("--target", type=str, help="Ціль для UDP-флуду у форматі IP:PORT.")
+    parser.add_argument("--no-gui", action="store_true", help="Примусово запустити в консольному режимі, навіть якщо GUI доступний.")
     args = parser.parse_args()
 
     try:
+        # auto_install_packages() # Uncomment if you want this to run automatically
         if args.mode:
             run_cli_mode(args)
         else:
-            if IS_WINDOWS and GUI_AVAILABLE:
+            if IS_WINDOWS and GUI_AVAILABLE and not args.no_gui:
                 log.info("Запуск графічного інтерфейсу для Windows.")
                 app = WindowsGUI()
                 app.run()
             else:
-                if IS_WINDOWS: log.warning("Не вдалося завантажити customtkinter. Перехід до консольного режиму.")
+                if IS_WINDOWS and not args.no_gui: log.warning("Не вдалося завантажити customtkinter або вказано --no-gui. Перехід до консольного режиму.")
                 log.info("Запуск консольного інтерфейсу.")
                 app = TermuxUI()
                 app.run()
     except KeyboardInterrupt:
-        log.info("Програму зупинено користувачем (Ctrl+C).")
+        log.info("\nПрограму зупинено користувачем (Ctrl+C).")
     except Exception as e:
         log.critical(f"Виникла неперехоплена глобальна помилка: {e}", exc_info=True)
     finally:
