@@ -32,18 +32,13 @@ from enum import Enum
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from typing import Dict, Any, Tuple, Optional, List
-# MODIFICATION: Import filedialog for the GUI save log feature ONLY on Windows
+IS_WINDOWS = os.name == 'nt'
+IS_ANDROID = "com.termux" in os.environ.get("PREFIX", "")
 if IS_WINDOWS:
     try:
         from tkinter import filedialog
     except ImportError:
         pass
-
-# --- Системні константи ---
-IS_WINDOWS = os.name == 'nt'
-IS_ANDROID = "com.termux" in os.environ.get("PREFIX", "")
-
-# --- Налаштування файлів ---
 CONFIG_FILE = "TrafficDown_config.json"
 LOG_DIR = "logs"
 REPORT_DIR = "reports"
