@@ -32,9 +32,12 @@ from enum import Enum
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from typing import Dict, Any, Tuple, Optional, List
-# MODIFICATION: Import filedialog for the GUI save log feature
-from tkinter import filedialog
-
+# MODIFICATION: Import filedialog for the GUI save log feature ONLY on Windows
+if IS_WINDOWS:
+    try:
+        from tkinter import filedialog
+    except ImportError:
+        pass
 
 # --- Системні константи ---
 IS_WINDOWS = os.name == 'nt'
