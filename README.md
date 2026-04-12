@@ -121,9 +121,148 @@ TUI (Текстовый интерфейс)
 
 Обновленный макет: Информация на панели организована для лучшей читаемости, а меню обновлено новыми опциями.
 
+Новые возможности v9.0 beta:
 
 
-Переведено с помощью DeepL.com (бесплатная версия)
+
+NEW: WebSocket Flood mode (aiohttp + ws://)
+
+
+
+NEW: DNS Flood mode (socket-level UDP DNS queries)
+
+
+
+NEW: SSL/TLS Stress Test mode (TLS handshake flood)
+
+
+
+NEW: Multi-Target Manager (до 8 целей одновременно)
+
+
+
+NEW: ProxyRotator — автоматическая ротация прокси
+
+
+
+NEW: BandwidthScheduler — планировщик скорости (ramp-up/down)
+
+
+
+NEW: PercentileStats — P50 / P90 / P95 / P99 латентность
+
+
+
+NEW: TrafficAnalyzer — live-анализ пакетов (pcap-lite)
+
+
+
+NEW: WebhookNotifier — Telegram / Discord / HTTP webhook
+
+
+
+NEW: Plugin API — загрузка кастомных векторов (plugins/)
+
+
+
+NEW: Session Templates — сохранение и быстрая загрузка профилей
+
+
+
+NEW: HTML Dashboard — интерактивный отчёт с Chart.js
+
+
+
+NEW: CSV Real-Time Export — запись статистики в реальном времени
+
+
+
+NEW: Connection Pool Recycler — авто-перезапуск упавших потоков
+
+
+
+NEW: Memory Watchdog — предупреждение при утечке памяти
+
+
+
+NEW: IPv4 / IPv6 Dual-Stack Auto-Detect
+
+
+
+NEW: HTTP/2 поддержка (через aiohttp)
+
+
+
+NEW: Custom Payload Generator для UDP/TCP
+
+
+
+NEW: TUI: 6 экранов (+ Live Stats, + Plugins)
+
+
+
+NEW: GUI: новые вкладки (Scheduler, 
+Plugins, Multi-Target)
+
+
+
+NEW: CLI: 12 новых аргументов
+
+
+
+Улучшения:
+
+
+
+IMPROVEMENT: Engine поддерживает плавное переключение без перезапуска
+
+
+
+IMPROVEMENT: SessionHistory до 500 записей
+
+
+
+IMPROVEMENT: BandwidthLimiter — отдельно для каждого режима
+
+
+
+IMPROVEMENT: Ротация логов по дням + сжатие старых логов
+
+
+
+IMPROVEMENT: Auto-Tune Threads v2 — бенчмарк сетевого стека
+
+
+
+IMPROVEMENT: GeoIP с кешем (sqlite3 in-memory)
+
+
+
+IMPROVEMENT: HTML-отчёт с Chart.js sparklines
+
+
+
+IMPROVEMENT: PingMonitor — ICMP и TCP-ping режимы
+
+
+
+IMPROVEMENT: Конфиг версионирован, авто-миграция
+
+
+
+Исправления ошибок:
+
+
+
+BUGFIX: CTkSlider.cget("from") → словарь диапазонов
+
+
+
+BUGFIX: Race condition в speed_updater
+
+
+
+BUGFIX: AsyncLoop зависает при stop() → добавлен таймаут
 
 # Фото (GUI)
 <img width="994" height="713" alt="image" src="https://github.com/user-attachments/assets/741eb832-bf7b-4ed9-b4ad-af19487ca8ce" />
